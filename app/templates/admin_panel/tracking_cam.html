@@ -1,0 +1,526 @@
+{% extends "components/base.html" %}
+{% block title %}
+Tracking Camera
+{% endblock %}
+
+{% block content %}
+<div class="content">
+    <div class="container-xl">
+        <div class="header mb-4">
+            <div class="row align-items-center justify-content-between gx-4">
+                <div class="col-auto">
+                    <div class="page-pretitle">
+                        Configuration
+                    </div>
+                    <h2 class="page-title">
+                        Employee Performance Tracking Camera
+                    </h2>
+                </div>
+                <div class="col-auto ms-auto d-print-none">
+                    <a href="#" onclick="openAddTrackingCamModal()" class="btn btn-primary ms-3 d-none d-sm-inline-block">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z"/><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+                        Add
+                    </a>
+                    <a href="#" onclick="openAddTrackingCamModal()" class="btn btn-primary ms-3 d-sm-none btn-icon">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z"/><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+                    </a>
+                </div>
+            </div>
+        </div>
+        <div class="row row-deck row-cards">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-body border-bottom py-3">
+                        <div class="d-flex">
+                            <div class="text-muted">
+                                Show
+                                <div class="mx-2 d-inline-block">
+                                    <input type="text" class="form-control form-control-sm" value="{{ cams|length if cams else 0 }}" size="3" readonly>
+                                </div>
+                                entries
+                            </div>
+                            <div class="ms-auto text-muted">
+                                Search:
+                                <div class="ms-2 d-inline-block">
+                                    <input type="text" class="form-control form-control-sm" id="searchInputTracking" onkeyup="searchTrackingCameras()">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table card-table table-vcenter text-nowrap datatable" id="cameraTableTracking">
+                            <thead>
+                                <tr>
+                                    <th class="w-1">No.</th>
+                                    <th>Camera Name</th>
+                                    <th>Feed Source</th>
+                                    <th>Status</th>
+                                    <th>Uniform</th>
+                                    <th>ID Card</th>
+                                    <th>Shoes</th>
+                                    <th>Smoke</th>
+                                    <th>Sit</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for cam in cams %}
+                                <tr data-cam-id="{{ cam.id }}" data-cam-name="{{ cam.cam_name | lower }}">
+                                    <td>{{ loop.index }}</td>
+                                    <td>{{ cam.cam_name }}</td>
+                                    <td>
+                                        {% if cam.feed_src == '0' %}
+                                            Webcam (Index 0)
+                                        {% elif cam.feed_src and (cam.feed_src.startswith('rtsp://') or cam.feed_src.startswith('http://') or cam.feed_src.startswith('https://')) %}
+                                            {{ cam.feed_src }} (CCTV)
+                                        {% else %}
+                                            {{ cam.feed_src }} (Unknown)
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if cam.cam_is_active %}
+                                        <span class="badge bg-success">Active</span>
+                                        {% else %}
+                                        <span class="badge bg-danger">Inactive</span>
+                                        {% endif %}
+                                    </td>
+                                    <td><span class="badge bg-{{ 'success' if cam.uniform_detection else 'secondary' }}">{{ 'Yes' if cam.uniform_detection else 'No' }}</span></td>
+                                    <td><span class="badge bg-{{ 'success' if cam.id_card_detection else 'secondary' }}">{{ 'Yes' if cam.id_card_detection else 'No' }}</span></td>
+                                    <td><span class="badge bg-{{ 'success' if cam.shoes_detection else 'secondary' }}">{{ 'Yes' if cam.shoes_detection else 'No' }}</span></td>
+                                    <td><span class="badge bg-{{ 'success' if cam.ciggerate_detection else 'secondary' }}">{{ 'Yes' if cam.ciggerate_detection else 'No' }}</span></td>
+                                    <td><span class="badge bg-{{ 'success' if cam.sit_detection else 'secondary' }}">{{ 'Yes' if cam.sit_detection else 'No' }}</span></td>
+                                    <td class="text-end">
+                                        <span class="dropdown">
+                                            <button class="btn btn-white btn-sm dropdown-toggle align-text-top" data-bs-toggle="dropdown">Actions</button>
+                                            <div class="dropdown-menu dropdown-menu-end">
+                                                <a class="dropdown-item" href="javascript:void(0)" onclick="openEditModal({{ cam.id }})">Edit</a>
+                                                <a class="dropdown-item" href="javascript:void(0)" onclick="deleteCamera({{ cam.id }})">Delete</a>
+                                                <div class="dropdown-divider"></div>
+                                                <a class="dropdown-item" href="javascript:void(0)" onclick="viewStream({{ cam.id }})">View Stream</a>
+                                            </div>
+                                        </span>
+                                    </td>
+                                </tr>
+                                {% else %}
+                                <tr>
+                                    <td colspan="10" class="text-center">No tracking cameras found.</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="card-footer d-flex align-items-center">
+                        <p class="m-0 text-muted">Showing <span>{{ cams|length if cams else 0 }}</span> entries</p>
+                        <ul class="pagination m-0 ms-auto">
+                            {# Pagination links can be added here if needed #}
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal modal-blur fade" id="modal-add" tabindex="-1" role="dialog" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Add Employee Performance Tracking Camera</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="add-tracking-camera-form" method="POST" action="{{ url_for('camera.add_tracking_camera') }}" onsubmit="addTrackingCamera(event)">
+                    <div class="mb-3">
+                        <label class="form-label" for="add_tracking_cam_name">Camera Name</label>
+                        <input type="text" class="form-control" name="cam_name" id="add_tracking_cam_name" required>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Camera Type</label>
+                        <div>
+                            <label class="form-check form-check-inline">
+                                <input class="form-check-input" type="radio" name="camera_type" id="type_webcam_tracking_add" value="webcam" checked required>
+                                <span class="form-check-label">Webcam</span>
+                            </label>
+                            <label class="form-check form-check-inline">
+                                <input class="form-check-input" type="radio" name="camera_type" id="type_cctv_tracking_add" value="cctv" required>
+                                <span class="form-check-label">CCTV</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="mb-3" id="feed_src_rtsp_group_tracking_add" style="display: none;">
+                        <label class="form-label" for="add_tracking_feed_src_rtsp">RTSP URL (for CCTV)</label>
+                        <input type="text" class="form-control" name="feed_src_rtsp" id="add_tracking_feed_src_rtsp" placeholder="rtsp://user:pass@ip_address:port/stream">
+                        <small class="form-text text-muted">Required if CCTV is selected. For Webcam, this is ignored (uses index 0).</small>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Features</label>
+                        <label class="form-check mb-1">
+                            <input class="form-check-input" type="checkbox" name="uniform_detection" id="add-uniform-detection">
+                            <span class="form-check-label">Uniform Detection</span>
+                        </label>
+                        <label class="form-check">
+                            <input class="form-check-input" type="checkbox" name="id_card_detection" id="add-id-card-detection">
+                            <span class="form-check-label">ID Card Detection</span>
+                        </label>
+                        <label class="form-check">
+                            <input class="form-check-input" type="checkbox" name="shoes_detection" id="add-shoes-detection">
+                            <span class="form-check-label">Shoe Detection</span>
+                        </label>
+                        <label class="form-check">
+                            <input class="form-check-input" type="checkbox" name="ciggerate_detection" id="add-ciggerate-detection">
+                            <span class="form-check-label">Smoke Detection</span>
+                        </label>
+                        <label class="form-check">
+                            <input class="form-check-input" type="checkbox" name="sit_detection" id="add-sit-detection">
+                            <span class="form-check-label">Sit Detection</span>
+                        </label>
+                    </div>
+                    <div class="modal-footer mt-2 p-0">
+                        <button type="button" class="btn btn-link me-auto" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Add Tracking Camera</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal modal-blur fade" id="modal-edit" tabindex="-1" role="dialog" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Edit Tracking Camera</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="edit-tracking-camera-form" method="post" onsubmit="updateTrackingCamera(event)">
+                    <input type="hidden" name="id" id="edit-camera-id">
+                    <div class="mb-3">
+                        <label class="form-label" for="edit_tracking_camera_name">Camera Name</label>
+                        <input type="text" class="form-control" name="cam_name" id="edit_tracking_camera_name" required>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label" for="edit_tracking_feed_src">RTSP IP / Webcam Index</label>
+                        <input type="text" class="form-control" name="feed_src" id="edit_tracking_feed_src" required>
+                        <small class="form-text text-muted">Enter '0' for webcam, or RTSP URL for CCTV.</small>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Features</label>
+                        <label class="form-check mb-1">
+                            <input class="form-check-input" type="checkbox" name="uniform_detection" id="edit-uniform-detection">
+                            <span class="form-check-label">Uniform Detection</span>
+                        </label>
+                        <label class="form-check">
+                            <input class="form-check-input" type="checkbox" name="id_card_detection" id="edit-id-card-detection">
+                            <span class="form-check-label">ID Card Detection</span>
+                        </label>
+                        <label class="form-check">
+                            <input class="form-check-input" type="checkbox" name="shoes_detection" id="edit-shoes-detection">
+                            <span class="form-check-label">Shoe Detection</span>
+                        </label>
+                        <label class="form-check">
+                            <input class="form-check-input" type="checkbox" name="ciggerate_detection" id="edit-ciggerate-detection">
+                            <span class="form-check-label">Smoke Detection</span>
+                        </label>
+                        <label class="form-check">
+                            <input class="form-check-input" type="checkbox" name="sit_detection" id="edit-sit-detection">
+                            <span class="form-check-label">Sit Detection</span>
+                        </label>
+                    </div>
+                    <div class="modal-footer mt-2 p-0">
+                        <button type="button" class="btn btn-link me-auto" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Save Changes</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal modal-blur fade" id="modal-view-stream" tabindex="-1" role="dialog" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">View Tracking Stream</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close" onclick="closeModal('modal-view-stream')"></button>
+            </div>
+            <div class="modal-body text-center">
+                <div id="loader-stream-tracking" class="spinner-border text-primary" role="status" style="display: none;">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <img id="img_stream_tracking" src="" style="width: 100%; max-height: 70vh; object-fit: contain; border-radius: 10px; display: none;"/>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-primary" id="stream-button-tracking" onclick="toggleStreamTracking()">Start Stream</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+
+
+    let currentStreamCamIdTracking = null;
+
+    function openModal(modalId) {
+         var myModal = new bootstrap.Modal(document.getElementById(modalId));
+    myModal.show();;
+        
+    }
+
+    function closeModal(modalId) {
+        var modalElement = document.getElementById(modalId);
+        var modal = bootstrap.Modal(modalElement);
+        if (modal) {
+            modal.hide();
+        }
+
+       
+    }
+    
+    document.addEventListener('DOMContentLoaded', function () {
+        const webcamRadioTrackingAdd = document.getElementById('type_webcam_tracking_add');
+        const cctvRadioTrackingAdd = document.getElementById('type_cctv_tracking_add');
+        const rtspGroupTrackingAdd = document.getElementById('feed_src_rtsp_group_tracking_add');
+        const rtspInputTrackingAdd = document.getElementById('add_tracking_feed_src_rtsp');
+
+        window.toggleRtspInputTrackingAdd = function() {
+            if (cctvRadioTrackingAdd.checked) {
+                rtspGroupTrackingAdd.style.display = 'block';
+                rtspInputTrackingAdd.required = true;
+            } else {
+                rtspGroupTrackingAdd.style.display = 'none';
+                rtspInputTrackingAdd.required = false;
+                rtspInputTrackingAdd.value = ''; // Clear value when hiding
+            }
+        }
+
+        if (webcamRadioTrackingAdd && cctvRadioTrackingAdd && rtspGroupTrackingAdd && rtspInputTrackingAdd) {
+            toggleRtspInputTrackingAdd(); 
+            webcamRadioTrackingAdd.addEventListener('change', toggleRtspInputTrackingAdd);
+            cctvRadioTrackingAdd.addEventListener('change', toggleRtspInputTrackingAdd);
+        }
+        
+        window.searchTrackingCameras = function() {
+            const input = document.getElementById('searchInputTracking');
+            const filter = input.value.toLowerCase();
+            const table = document.getElementById('cameraTableTracking');
+            const tr = table.getElementsByTagName('tbody')[0].getElementsByTagName('tr');
+
+            for (let i = 0; i < tr.length; i++) {
+                // Ensure the row is an element node and has the data-cam-name attribute
+                if (tr[i].nodeType === 1 && tr[i].hasAttribute('data-cam-name')) {
+                    const camName = tr[i].getAttribute('data-cam-name');
+                    if (camName.includes(filter)) {
+                        tr[i].style.display = "";
+                    } else {
+                        tr[i].style.display = "none";
+                    }
+                }
+            }
+        }
+    });
+
+    function openAddTrackingCamModal() {
+        const form = document.getElementById('add-tracking-camera-form');
+        if(form) form.reset();
+        
+        const webcamRadio = document.getElementById('type_webcam_tracking_add');
+        if(webcamRadio) webcamRadio.checked = true; // Default to webcam
+
+        if (typeof toggleRtspInputTrackingAdd === "function") {
+            toggleRtspInputTrackingAdd(); // Ensure UI state is correct after reset
+        }
+        openModal('modal-add');
+    }
+    
+    function openEditModal(camId) {
+        fetch(`{{ url_for('camera.get_camera_data', cam_id=0) }}`.replace('0', camId))
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Network response was not ok ' + response.statusText);
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.status === 'success') {
+                    const cam = data.data;
+                    document.getElementById('edit-camera-id').value = cam.id;
+                    document.getElementById('edit_tracking_camera_name').value = cam.cam_name;
+                    document.getElementById('edit_tracking_feed_src').value = cam.feed_src;
+
+                    document.getElementById('edit-uniform-detection').checked = cam.uniform_detection || false;
+                    document.getElementById('edit-id-card-detection').checked = cam.id_card_detection || false;
+                    document.getElementById('edit-shoes-detection').checked = cam.shoes_detection || false;
+                    document.getElementById('edit-ciggerate-detection').checked = cam.ciggerate_detection || false;
+                    document.getElementById('edit-sit-detection').checked = cam.sit_detection || false;
+                    
+                    openModal('modal-edit');
+                } else {
+                    Swal.fire('Error!', data.message || 'Could not load camera data.', 'error');
+                }
+            })
+            .catch(err => {
+                console.error("Error fetching camera data for edit:", err);
+                Swal.fire('Error!', 'Could not load camera data. ' + err.message, 'error');
+            });
+    }
+
+    function addTrackingCamera(event) {
+        event.preventDefault();
+        const form = document.getElementById('add-tracking-camera-form');
+        const formData = new FormData(form);
+        
+        // Ensure boolean values for checkboxes are sent correctly
+        form.querySelectorAll('input[type="checkbox"]').forEach(checkbox => {
+            if (!formData.has(checkbox.name)) {
+                formData.append(checkbox.name, 'off'); // Or handle on backend
+            }
+        });
+
+
+   fetch("{{ url_for('camera.add_tracking_camera') }}", { // Ensure this Jinja2 url_for resolves correctly
+        method: 'POST',
+        body: formData,
+        // No 'Content-Type' header needed for FormData; browser sets it to 'multipart/form-data'
+    })
+    .then(response => {
+        // Try to parse JSON regardless of response.ok status first,
+        // as even error responses from your API might contain useful JSON messages.
+        return response.json().then(data => {
+            if (!response.ok) {
+                // If response not OK, create an error object with the parsed JSON data
+                // This makes server-provided error messages available in the .catch block
+                const error = new Error(data.message || `HTTP error! Status: ${response.status}`);
+                error.data = data; // Attach full data from server
+                throw error;
+            }
+            return data; // This is the successful JSON payload
+        }).catch(jsonParseError => {
+            // This inner .catch handles cases where response.json() fails 
+            // (e.g., server sent HTML for a 500 error page not caught by your jsonify)
+            // or if response was !ok AND not valid JSON.
+            console.error("Response was not valid JSON or network error:", jsonParseError, "Status:", response.status);
+            let errorMessage = `An unexpected server error occurred (Status: ${response.status}). Check console for details.`;
+            if (response.status === 0) { // Likely network error
+                errorMessage = "Network error. Please check your connection.";
+            }
+            // Create a new error to throw to the outer .catch
+            const error = new Error(errorMessage);
+            error.response = response; // Attach original response object if needed
+            throw error;
+        });
+    })
+    .then(data => {
+        // This block is now only for successful (response.ok) JSON responses
+        if (data.status === 'success') {
+            Swal.fire({ 
+                title: 'Success!', 
+                text: data.message, 
+                icon: 'success' 
+            }).then((result) => {
+                // After SweetAlert closes (or if no user interaction, immediately)
+                location.reload();// Assuming this function exists and works
+           
+            });
+        } else {
+            // This case handles if server responds with 200 OK but status: 'error' in JSON
+            Swal.fire({ 
+                title: 'Operation Failed', 
+                html: data.message || 'The server reported an issue.', 
+                icon: 'error' 
+            });
+        }
+    })
+    .catch(error => {
+        // This .catch handles errors thrown from the .then(response => ...) block
+        console.error('Error adding tracking camera:', error);
+        // error.message should contain the server's JSON error message if parsed,
+        // or one of the more generic messages from the error handling logic.
+        Swal.fire({ 
+            title: 'Error!', 
+            text: error.message || 'An unexpected error occurred. Please try again.', 
+            icon: 'error' 
+        });
+    });
+    }
+
+    function updateTrackingCamera(event) {
+        event.preventDefault();
+        const form = document.getElementById('edit-tracking-camera-form');
+        const formData = new FormData(form);
+        const cameraId = formData.get('id');
+
+        // Ensure boolean values for checkboxes are sent correctly
+        form.querySelectorAll('input[type="checkbox"]').forEach(checkbox => {
+            if (!formData.has(checkbox.name)) {
+                formData.append(checkbox.name, 'off'); // Or handle on backend
+            }
+        });
+
+        fetch(`{{ url_for('camera.edit_tracking_camera', cam_id=0) }}`.replace('0', cameraId), {
+            method: 'POST',
+            body: formData,
+         
+        })
+        .then(response => {
+            if (!response.ok) { return response.json().then(err => { throw err; }); }
+            return response.json();
+        })
+        .then(data => {
+            if (data.status === 'success') {
+                Swal.fire({ title: 'Success!', text: data.message, icon: 'success' }).then(() => {
+                    closeModal('modal-edit');
+                    location.reload();
+                });
+            } else {
+                Swal.fire({ title: 'Error!', html: data.message || 'Failed to update camera.', icon: 'error' });
+            }
+        })
+        .catch(error => {
+            console.error('Error updating tracking camera:', error);
+            Swal.fire({ title: 'Error!', text: error.message || 'An error occurred.', icon: 'error' });
+        });
+    }
+    
+    function deleteCamera(id) {
+        Swal.fire({
+            title: 'Are you sure?',
+            text: "You won't be able to revert this!",
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#d33',
+            cancelButtonColor: '#3085d6',
+            confirmButtonText: 'Yes, delete it!'
+        }).then((result) => {
+            if (result.isConfirmed) {
+                fetch(`{{ url_for('camera.delete_camera', cam_id=0) }}`.replace('0', id), {
+                    method: 'POST', // Flask routes often use POST for delete if not using a dedicated DELETE method or JS library that simplifies it
+                 
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        Swal.fire('Deleted!', data.message || 'Camera has been deleted.', 'success').then(() => {
+                            location.reload();
+                        });
+                    } else {
+                        Swal.fire('Error!', data.message || 'Failed to delete camera.', 'error');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error deleting camera:', error);
+                    Swal.fire('Error!', 'An error occurred.', 'error');
+                });
+            }
+        });
+    }
+
+
+</script>
+{% endblock %}

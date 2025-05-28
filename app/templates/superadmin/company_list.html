@@ -1,0 +1,387 @@
+{% extends "components/base.html" %}
+{% block title %}
+Company List
+{% endblock %}
+
+{% block content %} 
+{# csrf_token is handled by the meta tag in base.html and accessed by JS. No direct tag needed here. #}
+
+<div class="content">
+    <div class="container-xl">
+   <div class="header mb-4">
+            {# Added justify-content-between and gx-4 for explicit spacing #}
+            <div class="row align-items-center justify-content-between gx-4">
+                {# Bagian kiri: pre-title dan title #}
+                <div class="col-auto"> 
+                    <div class="page-pretitle">
+                        Users
+                    </div>
+                    <h2 class="page-title">
+                        Master User Admin
+                    </h2>
+                </div>
+                {# Bagian kanan: actions. Menggunakan ms-auto untuk mendorong ke kanan #}
+                <div class="col-auto ms-auto d-print-none"> 
+                    <a href="#" class="btn btn-primary ms-3 d-none d-sm-inline-block" data-bs-toggle="modal" data-bs-target="#modal-tambah">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z"/><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+                        Add
+                    </a>
+                    <a href="#" class="btn btn-primary ms-3 d-sm-none btn-icon" data-bs-toggle="modal" data-bs-target="#modal-tambah">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z"/><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+                    </a>
+                </div>
+            </div>
+        </div>
+        <div class="row row-deck row-cards">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-body border-bottom py-3">
+                        <form method="get" class="d-flex" action="{{ url_for('superadmin.company') }}"> {# Added action for form submission #}
+                            <div class="text-muted">
+                                Show
+                                <div class="mx-2 d-inline-block">
+                                    <input type="number" name="entries" class="form-control form-control-sm" value="{{ entries_per_page }}" size="3" min="1">
+                                </div>
+                                entries
+                            </div>
+                            <div class="ms-auto text-muted"> {# ml-auto changed to ms-auto for Bootstrap 5 #}
+                                Search:
+                                <div class="ms-2 d-inline-block"> {# ml-2 changed to ms-2 for Bootstrap 5 #}
+                                    <input type="text" name="search" class="form-control form-control-sm" value="{{ search_term }}">
+                                </div>
+                            </div>
+                            <div class="ms-2"> {# ml-2 changed to ms-2 for Bootstrap 5 #}
+                                <button type="submit" class="btn btn-outline-secondary">
+                                    <i class="fas fa-search text-muted"></i>
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                   <div class="table-responsive" style="min-height: 200px;">
+                        <table class="table card-table table-vcenter text-nowrap datatable">
+                            <thead>
+                                <tr>
+                                    <th class="w-1">No.</th>
+                                    <th class="w-1">CompanyID</th>
+                                    <th>Company Name</th>
+                                    <th>Email</th>
+                                    <th>Username</th>
+                                    <th>Password</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for company in companies %}
+                                <tr>
+                                    {# forloop.counter changed to loop.index #}
+                                    <td>{{ loop.index + (page - 1) * entries_per_page }}</td> {# Calculate correct index for pagination #}
+                                    <td>
+                                        <span class="text-muted">{{ company.id }}</span>
+                                    </td>
+                                    <td>
+                                        {{ company.name }}
+                                    </td>
+                                    <td>
+                                        {# Access user_account relasi dari model Flask #}
+                                        {{ company.user_account.email if company.user_account else 'N/A'}} 
+                                    </td>
+                                    <td>
+                                        {# Access user_account relasi dari model Flask #}
+                                        {{ company.user_account.username if company.user_account else 'N/A' }} 
+                                    </td>
+                                    <td>
+                                        *****
+                                    </td>
+                                    <td class="text-center">
+                                        <span class="dropdown ms-1"> {# ml-1 changed to ms-1 #}
+                                        <button class="btn btn-white btn-sm dropdown-toggle align-text-top" data-bs-toggle="dropdown">Actions</button> {# data-toggle to data-bs-toggle #}
+                                        <div class="dropdown-menu dropdown-menu-center">
+                                            <a class="dropdown-item" href="#" onclick="showEditModal({{ company.id }})">Edit</a>
+                                            <a class="dropdown-item" href="#" onclick="deleteCompany({{ company.id }})">Delete</a>
+                                        </div>
+                                        </span>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="card-footer d-flex align-items-center">
+                        <p class="m-0 text-muted">Showing <span>{{ (page - 1) * entries_per_page + 1 }}</span> to <span>{{ (page - 1) * entries_per_page + companies|length }}</span> of <span>{{ company_count }}</span> entries</p> {# Manual calculation for start/end index #}
+                        <ul class="pagination m-0 ms-auto"> {# ml-auto changed to ms-auto #}
+                            {% if page > 1 %} {# companies.has_previous replaced by checking page number #}
+                            <li class="page-item">
+                                <a class="page-link" href="{{ url_for('superadmin.company', page=page - 1, entries=entries_per_page, search=search_term) }}">Previous</a>
+                            </li>
+                            {% endif %}
+                            {% for i in range(1, total_pages + 1) %} {# companies.paginator.page_range replaced #}
+                            <li class="page-item {% if page == i %}active{% endif %}">
+                                <a class="page-link" href="{{ url_for('superadmin.company', page=i, entries=entries_per_page, search=search_term) }}">{{ i }}</a>
+                            </li>
+                            {% endfor %}
+                            {% if page < total_pages %} {# companies.has_next replaced by checking page number #}
+                            <li class="page-item">
+                                <a class="page-link" href="{{ url_for('superadmin.company', page=page + 1, entries=entries_per_page, search=search_term) }}">Next</a>
+                            </li>
+                            {% endif %}
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+<div class="modal modal-blur fade" id="modal-tambah" tabindex="-1" role="dialog" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Add Company</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button> {# data-dismiss to data-bs-dismiss, class close to btn-close #}
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label">Company Name</label>
+                    <input type="text" class="form-control" id="add-company-name">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Username</label>
+                    <input type="text" class="form-control" id="add-username">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Email</label>
+                    <input type="email" class="form-control" id="add-email">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Password</label>
+                    <input type="password" class="form-control" id="add-password">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button> {# data-dismiss to data-bs-dismiss #}
+                <button type="button" class="btn btn-primary" onclick="addCompany()">Add</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal modal-blur fade" id="modal-edit" tabindex="-1" role="dialog" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Edit Company</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button> {# data-dismiss to data-bs-dismiss, class close to btn-close #}
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="edit-company-id">
+                <div class="mb-3">
+                    <label class="form-label">Company Name</label>
+                    <input type="text" class="form-control" id="edit-company-name">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Username</label>
+                    <input type="text" class="form-control" id="edit-username">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Email</label>
+                    <input type="email" class="form-control" id="edit-email">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Password</label>
+                    <input type="password" class="form-control" id="edit-password" placeholder="Leave blank to keep current password">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button> {# data-dismiss to data-bs-dismiss #}
+                <button type="button" class="btn btn-primary" onclick="editCompany()">Save</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+<script> 
+    // Get CSRF Token from meta tag
+    const getCsrfToken = () => {
+        const metaTag = document.querySelector('meta[name="csrf-token"]');
+        return metaTag ? metaTag.content : '';
+    };
+
+    function addCompany() {
+        const companyName = document.getElementById('add-company-name').value;
+        const username = document.getElementById('add-username').value;
+        const email = document.getElementById('add-email').value;
+        const password = document.getElementById('add-password').value;
+     
+        fetch("{{ url_for('superadmin.add_company') }}", {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'X-CSRFToken': getCsrfToken() // Use the helper function
+            },
+            body: new URLSearchParams({
+                'company_name': companyName,
+                'username': username,
+                'email': email,
+                'password': password
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                Swal.fire({
+                    title: 'Success!',
+                    text: data.message,
+                    icon: 'success'
+                }).then(() => {
+                    location.reload();
+                });
+            } else {
+                Swal.fire({
+                    title: 'Error!',
+                    text: data.message,
+                    icon: 'error'
+                });
+            }
+        })
+        .catch(error => {
+            console.error('Error adding company:', error);
+            Swal.fire({
+                title: 'Error!',
+                text: 'An unexpected error occurred. Please try again.',
+                icon: 'error'
+            });
+        });
+    }
+     
+    function showEditModal(companyId) {
+        fetch("{{ url_for('superadmin.get_company', company_id=0) }}".replace('0', companyId), {
+            headers: {
+                'X-CSRFToken': getCsrfToken() // Include CSRF for GET if your Flask-WTF setup requires it (unlikely for GET)
+            }
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Network response was not ok');
+            }
+            return response.json();
+        })
+        .then(data => {
+            document.getElementById('edit-company-id').value = data.id;
+            document.getElementById('edit-company-name').value = data.company_name;
+            document.getElementById('edit-username').value = data.username;
+            document.getElementById('edit-email').value = data.email;
+            document.getElementById('edit-password').value = ''; // Clear password field for security
+            
+            // Use Bootstrap 5 way to show modal
+            var editModal = new bootstrap.Modal(document.getElementById('modal-edit'));
+            editModal.show();
+        })
+        .catch(error => {
+            console.error('Error fetching company data:', error);
+            Swal.fire({
+                title: 'Error!',
+                text: 'Failed to load company data. Please try again.',
+                icon: 'error'
+            });
+        });
+    }
+     
+    function editCompany() {
+        const companyId = document.getElementById('edit-company-id').value;
+        const companyName = document.getElementById('edit-company-name').value;
+        const username = document.getElementById('edit-username').value;
+        const email = document.getElementById('edit-email').value;
+        const password = document.getElementById('edit-password').value;
+     
+        fetch("{{ url_for('superadmin.edit_company', company_id=0) }}".replace('0', companyId), {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'X-CSRFToken': getCsrfToken()
+            },
+            body: new URLSearchParams({
+                'company_name': companyName,
+                'username': username,
+                'email': email,
+                'password': password
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                Swal.fire({
+                    title: 'Success!',
+                    text: data.message,
+                    icon: 'success'
+                }).then(() => {
+                    location.reload();
+                });
+            } else {
+                Swal.fire({
+                    title: 'Error!',
+                    text: data.message,
+                    icon: 'error'
+                });
+            }
+        })
+        .catch(error => {
+            console.error('Error editing company:', error);
+            Swal.fire({
+                title: 'Error!',
+                text: 'An unexpected error occurred. Please try again.',
+                icon: 'error'
+            });
+        });
+    }
+     
+    function deleteCompany(companyId) {
+        Swal.fire({
+            title: 'Are you sure?',
+            text: "You won't be able to revert this!",
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#3085d6',
+            cancelButtonColor: '#d33',
+            confirmButtonText: 'Yes, delete it!'
+        }).then((result) => {
+            if (result.isConfirmed) {
+                fetch("{{ url_for('superadmin.delete_company', company_id=0) }}".replace('0', companyId), {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'X-CSRFToken': getCsrfToken()
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        Swal.fire(
+                            'Deleted!',
+                            'The company has been deleted.',
+                            'success'
+                        ).then(() => {
+                            location.reload();
+                        });
+                    } else {
+                        Swal.fire(
+                            'Error!',
+                            data.message,
+                            'error'
+                        );
+                    }
+                })
+                .catch(error => {
+                    console.error('Error deleting company:', error);
+                    Swal.fire(
+                        'Error!',
+                        'An unexpected error occurred during deletion. Please try again.',
+                        'error'
+                    );
+                });
+            }
+        });
+    }
+</script>
+{% endblock %}

@@ -1,0 +1,92 @@
+{% extends "components/base.html" %}
+{% block title %}
+Work Time Report
+{% endblock %}
+
+{% block content %}
+{# {% csrf_token %} is a Django tag and is not needed here in Flask. CSRF token is handled via meta tag in base.html and JavaScript. #}
+
+<div class="content">
+    <div class="container-xl">
+    <div class="header mb-4">
+            <div class="row align-items-center justify-content-between gx-4">
+                <div class="col-auto">
+                    <div class="page-pretitle">
+                        Reports
+                    </div>
+                    <h2 class="page-title">
+                        Work Time Report
+                    </h2>
+                </div>
+                <div class="col-auto ms-auto d-print-none">
+                    {# Tombol download akan ditambahkan di sini jika ada #}
+                    {# <a href="#" class="btn btn-primary ms-3">Download Report</a> #}
+                </div>
+            </div>
+        </div>
+        <div class="row row-deck row-cards">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-body border-bottom py-3">
+                        <form method="get" class="d-flex" action="{{ url_for('admin.work_time_report') }}">
+                            <div class="mb-3 me-2"> {# me-2 for margin-right #}
+                                <label for="filter-date" class="form-label">Date</label>
+                                <input type="date" class="form-control form-control-sm" id="filter-date" name="filter_date" value="{{ filter_date }}" onchange="this.form.submit()">
+                            </div>
+                            <div class="mb-3 ms-auto"> {# ms-auto to push to right #}
+                                <label for="personnel-filter" class="form-label">Personnel</label>
+                                <select class="form-select form-select-sm" id="personnel-filter" name="personnel_id" onchange="this.form.submit()">
+                                    <option value="">All Personnel</option>
+                                    {% for personnel in personnel_list %}
+                                    <option value="{{ personnel.id }}" {% if request.args.get('personnel_id') == personnel.id|string %}selected{% endif %}>{{ personnel.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            {# Tombol submit bisa disembunyikan jika auto-submit on change #}
+                            {# <button type="submit" class="btn btn-primary d-none">Filter</button> #}
+                        </form>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table card-table table-vcenter text-nowrap datatable">
+                            <thead>
+                                <tr>
+                                    <th class="w-1">No.</th>
+                                    <th>Employee Name</th>
+                                    <th>Division</th>
+                                    <th>Date</th>
+                                    <th>Total Time (Hours:Minutes)</th>
+                                    <th>Detected Areas (CCTV)</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for entry in work_time_report %}
+                                <tr>
+                                    <td>{{ loop.index }}</td>
+                                    <td>{{ entry.employee_name }}</td>
+                                    <td>{{ entry.division }}</td>
+                                    <td>{{ entry.date }}</td>
+                                    <td>{{ '%02d' | format(entry.total_time_hours) }}:{{ '%02d' | format(entry.total_time_minutes) }}</td> {# Format hours:minutes #}
+                                    <td>{{ entry.cctv_areas }}</td>
+                                </tr>
+                                {% else %} {# Jinja2's else for empty loop #}
+                                <tr>
+                                    <td colspan="6" class="text-center">No work time data found for selected date and filters.</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="card-footer d-flex align-items-center">
+                        <p class="m-0 text-muted">Showing <span>{{ work_time_report|length }}</span> entries</p>
+                        {# Jika perlu paginasi, terapkan di sini. Untuk saat ini hanya menampilkan jumlah total #}
+                        <ul class="pagination m-0 ms-auto">
+                            {# Pagination links #}
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}

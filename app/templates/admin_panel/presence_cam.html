@@ -1,0 +1,537 @@
+{% extends "components/base.html" %}
+{% block title %}
+Presence Camera
+{% endblock %}
+
+{% block content %}
+<div class="content">
+    <div class="container-xl">
+        <div class="header mb-4">
+            <div class="row align-items-center justify-content-between gx-4">
+                <div class="col-auto">
+                    <div class="page-pretitle">
+                        Configuration
+                    </div>
+                    <h2 class="page-title">
+                        Attendance Camera
+                    </h2>
+                </div>
+                <div class="col-auto ms-auto d-print-none">
+                    <a href="#" class="btn btn-primary ms-3 d-none d-sm-inline-block" data-bs-toggle="modal" data-bs-target="#modal-add">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z"/><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+                        Add
+                    </a>
+                    <a href="#" class="btn btn-primary ms-3 d-sm-none btn-icon" data-bs-toggle="modal" data-bs-target="#modal-add">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z"/><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+                    </a>
+                </div>
+            </div>
+        </div>
+        <div class="row row-deck row-cards">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-body border-bottom py-3">
+                        <div class="d-flex">
+                            <div class="text-muted">
+                                Show
+                                <div class="mx-2 d-inline-block">
+                                    <input type="text" class="form-control form-control-sm" value="{{ cams|length if cams else 0 }}" size="3" readonly>
+                                </div>
+                                entries
+                            </div>
+                            <div class="ms-auto text-muted">
+                                Search:
+                                <div class="ms-2 d-inline-block">
+                                    <input type="text" class="form-control form-control-sm" id="searchInput" onkeyup="searchCameras()" placeholder="Camera name...">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="table-responsive" style=" min-height: 200px;">
+                        <table class="table card-table table-vcenter text-nowrap datatable" id="cameraTable">
+                            <thead>
+                                <tr>
+                                    <th class="w-1">No.</th>
+                                    <th>Camera Name</th>
+                                    <th>Source</th>
+                                    <th>Attendance Start Time</th>
+                                    <th>Attendance End Time</th>
+                                    <th>Leaving Start Time</th>
+                                    <th>Leaving End Time</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% if cams %}
+                                    {% for cam in cams %}
+                                    <tr data-cam-id="{{ cam.id }}" data-cam-name="{{ cam.cam_name | lower }}">
+                                        <td>{{ loop.index }}</td>
+                                        <td>{{ cam.cam_name }}</td>
+                                        <td>
+                                            {% if cam.feed_src == '0' %}
+                                                <span class="badge bg-success">Webcam</span>
+                                          {% elif cam.feed_src and cam.feed_src.startswith('rtsp://') %}
+                                                <span class="badge bg-info">RTSP (CCTV)</span>
+                                            {% elif cam.feed_src and cam.feed_src.startswith('http://') or cam.feed_src.startswith('https://') %}
+                                                <span class="badge bg-warning">HTTP Stream</span>
+                                      
+                                            {% else %}
+                                                <span class="badge bg-secondary">Unknown</span>
+                                            {% endif %}
+                                        
+                              
+                                        </td>
+{# Baris 1: attendance_time_start #}
+                                        <td>{{ cam.attendance_time_start.strftime('%H:%M') if cam.attendance_time_start and hasattr(cam.attendance_time_start, 'strftime') else (cam.attendance_time_start[:5] if cam.attendance_time_start and cam.attendance_time_start is string else '-') }}</td>
+                                        
+                                        {# Baris 2: attendance_time_end #}
+                                        <td>{{ cam.attendance_time_end.strftime('%H:%M') if cam.attendance_time_end and hasattr(cam.attendance_time_end, 'strftime') else (cam.attendance_time_end[:5] if cam.attendance_time_end and cam.attendance_time_end is string else '-') }}</td>
+                                        
+                                        {# Baris 3: leaving_time_start #}
+                                        <td>{{ cam.leaving_time_start.strftime('%H:%M') if cam.leaving_time_start and hasattr(cam.leaving_time_start, 'strftime') else (cam.leaving_time_start[:5] if cam.leaving_time_start and cam.leaving_time_start is string else '-') }}</td>
+                                        
+                                        {# Baris 4: leaving_time_end #}
+                                        <td>{{ cam.leaving_time_end.strftime('%H:%M') if cam.leaving_time_end and hasattr(cam.leaving_time_end, 'strftime') else (cam.leaving_time_end[:5] if cam.leaving_time_end and cam.leaving_time_end is string else '-') }}</td>
+                                        <td class="text-end">
+                                            <div class="dropdown">
+                                                <button class="btn btn-outline-secondary btn-sm dropdown-toggle align-text-top" data-bs-toggle="dropdown">Actions</button>
+                                                <div class="dropdown-menu dropdown-menu-end">
+                                                    <a class="dropdown-item" href="javascript:void(0)" onclick="openEditModal({{ cam.id }})">Edit</a>
+                                                    <a class="dropdown-item" href="javascript:void(0)" onclick="deleteCamera({{ cam.id }})">Delete</a>
+                                                    <div class="dropdown-divider"></div>
+                                                    <a class="dropdown-item" href="javascript:void(0)" onclick="viewStream({{ cam.id }})">View Stream</a>
+                                                </div>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                {% else %}
+                                <tr>
+                                    <td colspan="8" class="text-center">No cameras found.</td>
+                                </tr>
+                                {% endif %}
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="card-footer d-flex align-items-center">
+                        <p class="m-0 text-muted">Showing <span>{{ cams|length if cams else 0 }}</span> of <span>{{ cams|length if cams else 0 }}</span> entries</p>
+                        <ul class="pagination m-0 ms-auto">
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# ADD MODAL - Dengan Radio Button #}
+<div class="modal modal-blur fade" id="modal-add" tabindex="-1" role="dialog" aria-labelledby="modalAddTitle" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="modalAddTitle">Add Attendance Camera</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="add-camera-form" onsubmit="addPresenceCamera(event)">
+                    <div class="mb-3">
+                        <label class="form-label required">Camera Name</label>
+                        <input type="text" class="form-control" name="cam_name" id="add-cam-name" required>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label required">Camera Type</label>
+                        <div>
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="radio" name="camera_type" id="add-camera-type-webcam" value="webcam" checked onchange="toggleRtspField('add')">
+                                <label class="form-check-label" for="add-camera-type-webcam">Webcam</label>
+                            </div>
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="radio" name="camera_type" id="add-camera-type-cctv" value="cctv" onchange="toggleRtspField('add')">
+                                <label class="form-check-label" for="add-camera-type-cctv">RTSP (CCTV)</label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mb-3" id="add-rtsp-field-container" style="display: none;">
+                        <label class="form-label" for="add-feed-src-rtsp">RTSP URL</label>
+                        <input type="text" class="form-control" name="feed_src_rtsp" id="add-feed-src-rtsp" placeholder="rtsp://user:pass@ip_address:port/path">
+                    </div>
+                    
+                    <input type="hidden" name="role_camera" value="P">
+                    
+                    <div class="mb-3 form-check" style="display: none;">
+                        <input type="checkbox" class="form-check-input" name="cam_is_active" id="add-cam-is-active" checked>
+                        <label class="form-check-label" for="add-cam-is-active">Active Camera</label>
+                    </div>
+                    <hr>
+                    <h6 class="mb-3">Schedule</h6>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label required">Attendance Start Time</label>
+                            <input type="time" class="form-control" name="attendance_time_start" id="add-att-start" required>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label required">Attendance End Time</label>
+                            <input type="time" class="form-control" name="attendance_time_end" id="add-att-end" required>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label required">Leaving Start Time</label>
+                            <input type="time" class="form-control" name="leaving_time_start" id="add-leaving-start" required>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label required">Leaving End Time</label>
+                            <input type="time" class="form-control" name="leaving_time_end" id="add-leaving-end" required>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-link link-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-primary ms-auto">Save</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# EDIT MODAL - Dengan Radio Button #}
+<div class="modal modal-blur fade" id="modal-edit" tabindex="-1" role="dialog" aria-labelledby="modalEditTitle" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="modalEditTitle">Edit Attendance Camera</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="edit-camera-form" onsubmit="updatePresenceCamera(event)">
+                    <input type="hidden" name="cam_id" id="edit-cam-id">
+                    <div class="mb-3">
+                        <label class="form-label required">Camera Name</label>
+                        <input type="text" class="form-control" name="cam_name" id="edit-cam-name" required>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label required">Camera Type</label>
+                        <div>
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="radio" name="camera_type" id="edit-camera-type-webcam" value="webcam" onchange="toggleRtspField('edit')">
+                                <label class="form-check-label" for="edit-camera-type-webcam">Webcam</label>
+                            </div>
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="radio" name="camera_type" id="edit-camera-type-cctv" value="cctv" onchange="toggleRtspField('edit')">
+                                <label class="form-check-label" for="edit-camera-type-cctv">RTSP (CCTV)</label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mb-3" id="edit-rtsp-field-container" style="display: none;">
+                        <label class="form-label" for="edit-feed-src-rtsp">RTSP URL</label>
+                        <input type="text" class="form-control" name="feed_src_rtsp" id="edit-feed-src-rtsp" placeholder="rtsp://user:pass@ip_address:port/path">
+                    </div>
+
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" name="cam_is_active" id="edit-cam-is-active">
+                        <label class="form-check-label" for="edit-cam-is-active">Active Camera</label>
+                    </div>
+                    <hr>
+                    <h6 class="mb-3">Schedule</h6>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label required">Attendance Start Time</label>
+                            <input type="time" class="form-control" name="attendance_time_start" id="edit-att-start" required>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label required">Attendance End Time</label>
+                            <input type="time" class="form-control" name="attendance_time_end" id="edit-att-end" required>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label required">Leaving Start Time</label>
+                            <input type="time" class="form-control" name="leaving_time_start" id="edit-leaving-start" required>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label required">Leaving End Time</label>
+                            <input type="time" class="form-control" name="leaving_time_end" id="edit-leaving-end" required>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-link link-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-primary ms-auto">Save Changes</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# VIEW STREAM MODAL #}
+<div class="modal modal-blur fade" id="modal-view-stream" tabindex="-1" role="dialog" aria-labelledby="modalViewStreamTitle" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="modalViewStreamTitle">View Stream</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close" onclick="stopCurrentStreamOnModalClose()"></button>
+            </div>
+            <div class="modal-body text-center">
+                <div id="stream-loader" class="spinner-border text-primary" role="status" style="display: none;">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <img id="img_stream_content" src="#" alt="Camera Stream" style="width: 100%; border-radius: 5px; display: none;"/>
+                 <p id="stream-error-message" class="text-danger" style="display:none;"></p>
+            </div>
+            <div class="modal-footer">
+                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" onclick="stopCurrentStreamOnModalClose()">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const getCsrfToken = () => {
+        const metaTag = document.querySelector('meta[name="csrf-token"]');
+        return metaTag ? metaTag.content : '';
+    };
+
+    let currentStreamCamIdGlobal = null; 
+
+    function hideModal(modalId) {
+        const modalElement = document.getElementById(modalId);
+        if (modalElement) {
+            const modalInstance = bootstrap.Modal.getInstance(modalElement);
+            if (modalInstance) {
+                modalInstance.hide();
+            }
+        }
+    }
+    
+    function showModal(modalId) {
+        const modalElement = document.getElementById(modalId);
+         if (modalElement) {
+            const modalInstance = bootstrap.Modal.getOrCreateInstance(modalElement);
+            modalInstance.show();
+        }
+    }
+
+    // Fungsi untuk menampilkan/menyembunyikan field RTSP
+    function toggleRtspField(modalPrefix) { // modalPrefix bisa 'add' atau 'edit'
+        const cctvRadio = document.getElementById(`${modalPrefix}-camera-type-cctv`);
+        const rtspContainer = document.getElementById(`${modalPrefix}-rtsp-field-container`);
+        const rtspInput = document.getElementById(`${modalPrefix}-feed-src-rtsp`);
+
+        if (!cctvRadio || !rtspContainer || !rtspInput) return;
+
+        if (cctvRadio.checked) {
+            rtspContainer.style.display = 'block';
+            rtspInput.required = true; // Jadikan wajib jika CCTV dipilih
+        } else {
+            rtspContainer.style.display = 'none';
+            rtspInput.required = false;
+            rtspInput.value = ''; // Kosongkan jika bukan CCTV
+        }
+    }
+    
+    // Panggil saat modal add dibuka (untuk reset)
+    document.getElementById('modal-add').addEventListener('show.bs.modal', function () {
+        document.getElementById('add-camera-form').reset();
+        document.getElementById('add-camera-type-webcam').checked = true; // Default ke webcam
+        toggleRtspField('add'); // Set initial state
+    });
+    
+    // Panggil saat modal edit dibuka (untuk set state awal)
+     document.getElementById('modal-edit').addEventListener('show.bs.modal', function () {
+        // State akan diatur di openEditModal setelah data diambil
+        // toggleRtspField('edit'); // Dipanggil di openEditModal
+    });
+
+
+    function addPresenceCamera(event) {
+        event.preventDefault();
+        const form = document.getElementById('add-camera-form');
+        const formData = new FormData(form);
+        const submitButton = form.querySelector('button[type="submit"]');
+        submitButton.disabled = true;
+        submitButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Saving...';
+
+        // Pastikan RTSP URL dikosongkan jika bukan CCTV (FormData akan mengirim field kosong jika ada di DOM)
+        if (formData.get('camera_type') === 'webcam') {
+            formData.delete('feed_src_rtsp'); // Hapus atau set ke string kosong
+        }
+
+
+        fetch("{{ url_for('camera.add_presence_camera') }}", {
+            method: 'POST',
+            body: formData,
+            headers: { 'X-CSRFToken': getCsrfToken() }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                Swal.fire({ title: 'Success!', text: data.message, icon: 'success' }).then(() => {
+                    location.reload();
+                    hideModal('modal-add');
+                });
+            } else {
+                Swal.fire({ title: 'Error!', text: data.message || 'An error occurred.', icon: 'error' });
+            }
+        })
+        .catch(error => {
+            console.error('Error adding camera:', error);
+            Swal.fire({ title: 'Error!', text: 'Could not connect to the server.', icon: 'error' });
+        })
+        .finally(() => {
+            submitButton.disabled = false;
+            submitButton.innerHTML = 'Save';
+        });
+    }
+
+function openEditModal(camId) {
+        fetch(`{{ url_for('camera.get_presence_camera_data', cam_id=0) }}`.replace('0', camId))
+        .then(response => {
+            if (!response.ok) { 
+                // Jika server mengembalikan status error (4xx, 5xx)
+                return response.json().then(errData => {
+                    throw new Error(errData.message || `Server error: ${response.status}`);
+                }).catch(() => { // Jika body error bukan JSON atau kosong
+                    throw new Error(`Server error: ${response.status}`);
+                });
+            }
+            return response.json();
+        })
+        .then(data => {
+            if (data.status === 'success' && data.data) {
+                const cam = data.data;
+                // ... (isi form seperti sebelumnya) ...
+                document.getElementById('edit-cam-id').value = cam.id;
+                document.getElementById('edit-cam-name').value = cam.cam_name;
+                document.getElementById('edit-cam-is-active').checked = cam.cam_is_active;
+                
+                if (document.getElementById('edit-camera-type-webcam') && document.getElementById('edit-camera-type-cctv')) {
+                    if (cam.current_camera_type === 'webcam') {
+                        document.getElementById('edit-camera-type-webcam').checked = true;
+                    } else if (cam.current_camera_type === 'cctv') {
+                        document.getElementById('edit-camera-type-cctv').checked = true;
+                    }
+                }
+                if (document.getElementById('edit-feed-src-rtsp')) {
+                    document.getElementById('edit-feed-src-rtsp').value = cam.current_feed_src_rtsp || '';
+                }
+                if (typeof toggleRtspField === "function") {
+                    toggleRtspField('edit');
+                }
+
+                document.getElementById('edit-att-start').value = cam.attendance_time_start;
+                document.getElementById('edit-att-end').value = cam.attendance_time_end;
+                document.getElementById('edit-leaving-start').value = cam.leaving_time_start;
+                document.getElementById('edit-leaving-end').value = cam.leaving_time_end;
+                
+                  var myModal = new bootstrap.Modal(document.getElementById('modal-edit'));
+    myModal.show();; // Ini akan memanggil fungsi showModal yang sudah diperbaiki
+            } else {
+                Swal.fire('Error!', data.message || 'Failed to load camera data.', 'error');
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching camera data:', error);
+            Swal.fire('Error!', `Failed to retrieve camera data. ${error.message}`, 'error');
+        });
+    }
+    function updatePresenceCamera(event) {
+        event.preventDefault();
+        const form = document.getElementById('edit-camera-form');
+        const camId = document.getElementById('edit-cam-id').value;
+        const formData = new FormData(form);
+        const submitButton = form.querySelector('button[type="submit"]');
+        submitButton.disabled = true;
+        submitButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Updating...';
+
+        // Pastikan RTSP URL dikosongkan jika bukan CCTV
+        if (formData.get('camera_type') === 'webcam') {
+            // formData.set('feed_src_rtsp', ''); // Kirim string kosong jika perlu
+            formData.delete('feed_src_rtsp');
+        }
+
+        fetch(`{{ url_for('camera.edit_presence_camera', cam_id=0) }}`.replace('0', camId), {
+            method: 'POST',
+            body: formData,
+            headers: { 'X-CSRFToken': getCsrfToken() }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                Swal.fire({ title: 'Success!', text: data.message, icon: 'success' }).then(() => {
+                    location.reload();
+                    hideModal('modal-edit');
+                });
+            } else {
+                Swal.fire({ title: 'Error!', text: data.message || 'An error occurred.', icon: 'error' });
+            }
+        })
+        .catch(error => {
+            console.error('Error updating camera:', error);
+            Swal.fire({ title: 'Error!', text: 'Could not connect to the server.', icon: 'error' });
+        })
+        .finally(() => {
+            submitButton.disabled = false;
+            submitButton.innerHTML = 'Save Changes';
+        });
+    }
+
+    function deleteCamera(camId) {
+        Swal.fire({
+            title: 'Are you sure?',
+            text: "You won't be able to revert this!",
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#d33',
+            cancelButtonColor: '#3085d6',
+            confirmButtonText: 'Yes, delete it!',
+            cancelButtonText: 'Cancel'
+        }).then((result) => {
+            if (result.isConfirmed) {
+                fetch(`{{ url_for('camera.delete_camera', cam_id=0) }}`.replace('0', camId), {
+                    method: 'POST',
+                    headers: { 'X-CSRFToken': getCsrfToken() }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        Swal.fire('Deleted!', data.message, 'success').then(() => {
+                            location.reload();
+                        });
+                    } else {
+                        Swal.fire('Failed!', data.message || 'Failed to delete camera.', 'error');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error deleting camera:', error);
+                    Swal.fire('Error!', 'Could not connect to the server.', 'error');
+                });
+            }
+        });
+    }
+
+    function searchCameras() {
+        const input = document.getElementById('searchInput');
+        const filter = input.value.toLowerCase();
+        const table = document.getElementById('cameraTable');
+        const tr = table.getElementsByTagName('tr');
+
+        for (let i = 1; i < tr.length; i++) { 
+            const camNameData = tr[i].dataset.camName;
+            if (camNameData) {
+                if (camNameData.includes(filter)) {
+                    tr[i].style.display = "";
+                } else {
+                    tr[i].style.display = "none";
+                }
+            }
+        }
+    }
+
+    
+
+</script>
+{% endblock %}

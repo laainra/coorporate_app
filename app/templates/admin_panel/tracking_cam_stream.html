@@ -1,0 +1,68 @@
+{% extends "components/base.html" %} {# Assuming 'components' is a subfolder in your 'templates' directory #}
+{% block title %}
+Tracking Stream
+{% endblock %}
+
+{% block content %}
+\
+<div class="content">
+    <div class="container-xl">
+        <div class="header mb-4">
+            <div class="row align-items-center justify-content-between gx-4">
+                <div class="col-auto">
+                    <div class="page-pretitle">
+                        {{ company.name }}'s {# Make sure 'company' object is passed to the template #}
+                    </div>
+                    <h2 class="page-title">
+                        Tracking Stream
+                    </h2>
+                </div>
+            </div>
+        </div>
+        <div class="card">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-body">
+                        <div class="row">
+                            {% for cam in tracking_cameras %} {# Make sure 'tracking_cameras' list is passed #}
+                            <div class="col-md-6">
+                                <div class="card mb-3 text-center">
+                                    <div class="card-body">
+                                        <div class="d-flex justify-content-center align-items-center mb-2">
+                                            <h5 class="card-title mb-0 me-2">{{ cam.cam_name }}</h5>
+                                            {% if cam.cam_is_active %}
+                                                <span id="status_badge_{{ cam.id }}" class="badge bg-success">Active</span>
+                                            {% else %}
+                                                <span id="status_badge_{{ cam.id }}" class="badge bg-danger">Inactive</span>
+                                            {% endif %}
+                                        </div>
+
+                            
+                                        <div id="loader_{{ cam.id }}" class="spinner-border text-primary" role="status" style="display: none;">
+                                            <span class="visually-hidden">Loading...</span> {# Bootstrap 5 uses visually-hidden #}
+                                        </div>
+
+                                        <img id="img_stream_{{ cam.id }}" 
+                                             src="{{ url_for('stream.predict_video', cam_id=cam.id) }}" {# Replace 'stream_bp.video_feed' with your actual endpoint #}
+                                             style="width: 100%; border-radius: 10px; display: {% if cam.cam_is_active %}block{% else %}none{% endif %};" 
+                                             alt="Stream for {{ cam.cam_name }}" />
+                                    </div>
+                                </div>
+                            </div>
+                            {% else %} {# Jinja2's equivalent of Django's {% empty %} #}
+                            <div class="col-12">
+                                <p>No tracking cameras available.</p>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+   
+</script>
+{% endblock %}

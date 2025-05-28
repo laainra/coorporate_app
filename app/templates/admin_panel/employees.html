@@ -1,0 +1,651 @@
+{% extends "components/base.html" %}
+{% block title %}
+Employees
+{% endblock %}
+
+{% block content %} 
+{# {% csrf_token %} is a Django tag and is not needed here in Flask. CSRF token is handled via meta tag in base.html and JavaScript. #}
+
+<div class="content">
+    <div class="container-xl">
+    <div class="header mb-4">
+            <div class="row align-items-center justify-content-between gx-4">
+                <div class="col-auto">
+                    <div class="page-pretitle">
+                        Employees
+                    </div>
+                    <h2 class="page-title">
+                        Employees
+                    </h2>
+                </div>
+                <div class="col-auto ms-auto d-print-none">
+                    <a class="btn btn-white ms-3" data-bs-toggle="modal" data-bs-target="#modal-import"> {# data-toggle/target to data-bs-toggle/target #}
+                        <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z"></path><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2v-2"></path><polyline points="7 9 12 4 17 9"></polyline><line x1="12" y1="4" x2="12" y2="16"></line></svg>
+                        Import
+                    </a>
+                    <a onclick="openAddPersonnelModal()" class="btn btn-primary ms-3 d-none d-sm-inline-block" data-bs-toggle="modal" data-bs-target="#modal-add-employee"> {# data-toggle/target to data-bs-toggle/target #}
+                        <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z"/><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+                        Add
+                    </a>
+                    <a href="#" class="btn btn-primary ms-3 d-sm-none btn-icon" data-bs-toggle="modal" data-bs-target="#modal-add-employee"> {# data-toggle/target to data-bs-toggle/target #}
+                        <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z"/><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+                    </a>
+                </div>
+            </div>
+        </div>
+        <div class="row row-deck row-cards">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-body border-bottom py-3">
+                        <div class="d-flex mb-4">
+                            <div style="max-width: 200px;" class="me-2"> {# mr-2 changed to me-2 #}
+                                <select class="form-select" id="divisionFilter" onchange="filterData()">
+                                    <option value="">All Division</option>
+                                    {% for division in divisions %}
+                                    <option value="{{ division.id }}">{{ division.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="ms-auto text-muted"> {# ml-auto changed to ms-auto #}
+                                Search:
+                                <div class="ms-2 d-inline-block"> {# ml-2 changed to ms-2 #}
+                                    <input type="text" class="form-control form-control-sm" id="searchInput" onkeyup="searchData()">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="d-flex">
+                            {# Commented out show entries input, as pagination is JS-driven now. #}
+                        </div>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table card-table table-vcenter text-nowrap datatable">
+                            <thead>
+                                <tr>
+                                    <th class="w-1">No.</th>
+                                    <th>ID Pegawai</th>
+                                    <th>Nama Pegawai</th>
+                                    <th>Divisi</th>
+                                    <th>Email</th>
+                                    <th>Username</th>
+                                    <th>Password</th>
+                                    <th>Dataset Foto</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody id="personnelTableBody">
+                                {# Data Karyawan Awal dari Backend Jinja2 #}
+                                {% for employee in employees %}
+                                <tr data-division="{{ employee.division_obj.id if employee.division_obj else '' }}"> {# Added data-division attribute #}
+                                    <td>{{ loop.index }}</td> {# forloop.counter -> loop.index #}
+                                    {# A tag in <td> is not standard HTML. Move onclick to <td> or <tr>. #}
+                                    <td onclick="openPersonnelDetailModal({{ employee.id }}, '{{ employee.name }}')" style="cursor:pointer;">
+                                        <span class="text-muted">{{ employee.id }}</span>
+                                    </td>
+                                    <td>{{ employee.name }}</td>
+                                    <td>{{ employee.division_obj.name if employee.division_obj else 'N/A' }}</td> {# Access division_obj #}
+                                    <td>{{ employee.user_account.email if employee.user_account else 'N/A' }}</td> {# Access user_account #}
+                                    <td>{{ employee.user_account.username if employee.user_account else 'N/A' }}</td> {# Access user_account #}
+                                    <td>********</td>
+                                    <td>
+                                        <a href="#" onclick="openDatasetPage({{ employee.id }})" class="btn btn-primary ms-3 d-none d-sm-inline-block" data-bs-toggle="modal" data-bs-target="#modal-dataset-photo"> {# url_for is not suitable for dynamic href directly in HTML, use JS #}
+                                            <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                                                <path stroke="none" d="M0 0h24H0z"/>
+                                                <line x1="12" y1="5" x2="12" y2="19"/>
+                                                <line x1="5" y1="12" x2="19" y2="12"/>
+                                            </svg>
+                                            Open Dataset
+                                        </a>
+                                    </td>
+                                    <td class="text-right">
+                                        <span class="dropdown ms-1"> {# ml-1 changed to ms-1 #}
+                                        <button class="btn btn-white btn-sm dropdown-toggle align-text-top" data-bs-toggle="dropdown">Actions</button> {# data-toggle -> data-bs-toggle #}
+                                        <div class="dropdown-menu dropdown-menu-right">
+                                            <a class="dropdown-item" href="#" onclick="openEditModal({{ employee.id }})">Edit</a>
+                                            <a class="dropdown-item" href="#" onclick="deleteEmployee({{ employee.id }})">Delete</a>
+                                        </div>
+                                        </span>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="card-footer d-flex align-items-center">
+                        <p class="m-0 text-muted">Showing <span>1</span> to <span>{{ employees|length }}</span> of <span>{{ employees|length }}</span> entries</p> {# Simplified for now, if no server-side pagination #}
+                        {# Simplified pagination section for now, assuming no server-side pagination yet #}
+                        {# Jika ingin paginasi dinamis di frontend, Anda perlu data lengkap dari backend atau AJAX. #}
+                        <ul class="pagination m-0 ms-auto" id="personnel-pagination"> 
+                            {# Pagination links generated by JS #}
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# MODAL ADD EMPLOYEE #}
+<div class="modal modal-blur fade" id="modal-add-employee" tabindex="-1" role="dialog" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered" role="document">
+        <div class="modal-content">
+            <form id="add-employee-form" method="POST" onsubmit="event.preventDefault(); addEmployee();">
+                {# {% csrf_token %} is Django tag, not needed directly here in Flask #}
+                <div class="modal-header">
+                    <h5 class="modal-title">Add Employee</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button> {# data-dismiss -> data-bs-dismiss #}
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Employee Name</label>
+                        <input type="text" class="form-control" name="name" id="add-employee-name" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Division</label>
+                        <select class="form-select" name="division" id="add-employee-division" required>
+                            <option value="" selected>Choose Division</option> {# Added empty value option #}
+                            {% for division in divisions %}
+                            <option value="{{ division.id }}">{{ division.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Email</label>
+                        <input type="email" class="form-control" name="email" id="add-employee-email" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Username</label>
+                        <input type="text" class="form-control" name="username" id="add-employee-username" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Password</label>
+                        <input type="password" class="form-control" name="password" id="add-employee-password" required>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-link link-secondary" data-bs-dismiss="modal">Cancel</button> {# data-dismiss -> data-bs-dismiss #}
+                    <button type="submit" class="btn btn-primary ms-auto">Add</button> {# ml-auto -> ms-auto #}
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+{# MODAL EDIT EMPLOYEE #}
+<div class="modal modal-blur fade" id="modal-edit-employee" tabindex="-1" role="dialog" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered" role="document">
+        <div class="modal-content">
+            <form id="edit-employee-form" method="POST" onsubmit="event.preventDefault(); updateEmployee();">
+                {# {% csrf_token %} is Django tag, not needed directly here in Flask #}
+                <div class="modal-header">
+                    <h5 class="modal-title">Edit Employee</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button> {# data-dismiss -> data-bs-dismiss #}
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" name="employee_id" id="edit-employee-id">
+                    <div class="mb-3">
+                        <label class="form-label">Employee Name</label>
+                        <input type="text" class="form-control" name="name" id="edit-employee-name" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Division</label>
+                        <select class="form-select" name="division" id="edit-employee-division" required>
+                            <option value="" selected>Choose Division</option>
+                            {% for division in divisions %}
+                            <option value="{{ division.id }}">{{ division.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Email</label>
+                        <input type="email" class="form-control" name="email" id="edit-employee-email" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Username</label>
+                        <input type="text" class="form-control" name="username" id="edit-employee-username" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Password</label>
+                        <input type="password" class="form-control" name="password" id="edit-employee-password" placeholder="Leave blank to keep current password"> {# Added placeholder #}
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-link link-secondary" data-bs-dismiss="modal">Cancel</button> {# data-dismiss -> data-bs-dismiss #}
+                    <button type="submit" class="btn btn-primary ms-auto">Save</button> {# ml-auto -> ms-auto #}
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+{# MODAL DATASET PHOTO (Re-used from employee_panel/dataset.html, or can be in a dedicated components/modal folder) #}
+<div class="modal modal-blur fade" id="modal-dataset-photo" tabindex="-1" role="dialog" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="modal-dataset-photo-title">Personnel Images</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div id="imagesGrid" class="container d-flex justify-content-center flex-wrap gap-4 w-full">
+                    {# Images will be dynamically loaded here #}
+                </div>
+                <div id="noImagesMessage" class="text-center mt-4 hidden">
+                    <p>No images available.</p>
+                </div>
+                <div id="dropArea" class="border-2 border-dashed p-4 mt-4 text-center cursor-pointer">
+                    <p>Drag and drop your images here, or click to select images</p>
+                    <input type="file" id="fileInput" accept="image/*" class="hidden" multiple>
+                </div>
+                <div id="previewArea" class="hidden mt-4">
+                    <div id="imagePreview" class="flex space-x-4">
+                        <h3>Image Preview:</h3>
+                    </div>
+                </div>
+                {# Move dropdown (if needed for Admin to move images between personnel) #}
+                {# <div id="moveDropdown" class="hidden">
+                    <select id="moveToPersonnel" class="form-select">
+                        </select>
+                    <button class="btn btn-primary" onclick="moveImage()">Move</button>
+                </div> #}
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-link link-secondary" data-bs-dismiss="modal">Cancel</button>
+                <a href="#" id="addImageLink" class="btn btn-primary ms-auto" onclick="uploadImages()">Add Image</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# MODAL DETAIL EMPLOYEE #}
+<div class="modal modal-blur fade" id="modal-detail-employee" tabindex="-1" role="dialog" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Personnel Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="d-flex justify-content-center mb-4"> {# flex justify-center -> d-flex justify-content-center #}
+                    <img id="profileImage" src="" alt="Profile Image" class="rounded-circle w-32 h-32 object-cover" style="width: 8rem; height: 8rem;"> {# Tailwind classes to Bootstrap classes, add inline style #}
+                </div>
+                <div class="text-center">
+                    <h3 id="personnelNameText" class="text-xl font-semibold"></h3> {# Tailwind classes to Bootstrap, h3 for larger text #}
+                    <p id="personnelGender" class="text-muted"></p> {# text-gray-600 to text-muted #}
+                    <p id="personnelEmploymentStatus" class="text-muted"></p>
+                </div>
+                <div class="mt-4">
+                    <h4 class="text-lg font-semibold">Attendance Details</h4> {# Tailwind classes to Bootstrap #}
+                    <div class="row row-cols-2 g-4 mt-2"> {# grid grid-cols-2 gap-4 -> row row-cols-2 g-4 #}
+                        <div class="col">
+                            <div class="stat-box card p-2 text-center"> {# Added card p-2 text-center for styling #}
+                                <h4>Total Presence</h4>
+                                <p id="totalPresence">0</p>
+                            </div>
+                        </div>
+                        <div class="col">
+                            <div class="stat-box card p-2 text-center">
+                                <h4>Total On Time</h4>
+                                <p id="totalOntime">0</p>
+                            </div>
+                        </div>
+                        <div class="col">
+                            <div class="stat-box card p-2 text-center">
+                                <h4>Total Late</h4>
+                                <p id="totalLate">0</p>
+                            </div>
+                        </div>
+                        <div class="col">
+                            <div class="stat-box card p-2 text-center">
+                                <h4>Total Absence</h4>
+                                <p id="totalAbsence">0</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-link link-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# MODAL IMPORT #}
+<div class="modal modal-blur fade" id="modal-import" tabindex="-1" role="dialog" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Import Employee Data</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form method="post" enctype="multipart/form-data" action="{{ url_for('personnel.import_personnel') }}"> {# url_for #}
+                {# {% csrf_token %} is Django tag, removed #}
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">File Excel</label>
+                        <div class="form-file">
+                            <input type="file" name="file" class="form-control" id="customFile" accept=".xlsx" required onchange="displayFileName()"> {# form-file-input -> form-control #}
+                            {# Label for file input is now different in Bootstrap 5 #}
+                            {# <label class="form-file-label" for="customFile"><span class="form-file-text">Choose file...</span><span class="form-file-button">Browse</span></label> #}
+                        </div>
+                        <small class="form-hint">File format must be .xlsx</small>
+                        <p id="file-name" class="mt-2"></p>
+                        <a href="{{ url_for('personnel.download_template') }}" class="btn btn-link">Download Format</a> {# url_for #}
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-link link-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary ms-auto">Import</button> {# ml-auto -> ms-auto #}
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Get CSRF Token from meta tag (already in base.html)
+    const getCsrfToken = () => {
+        const metaTag = document.querySelector('meta[name="csrf-token"]');
+        return metaTag ? metaTag.content : '';
+    };
+
+    // Functions to open/close modals (using Bootstrap 5 JS)
+    function openModal(modalId) {
+        var modalElement = document.getElementById(modalId);
+        var modal = new bootstrap.Modal(modalElement);
+        modal.show();
+    }
+    function closeModal(modalId) {
+        var modalElement = document.getElementById(modalId);
+        var modal = bootstrap.Modal.getInstance(modalElement);
+        if (modal) {
+            modal.hide();
+        }
+    }
+
+    // JS for Import Modal
+    function displayFileName() {
+        var input = document.getElementById('customFile');
+        var fileName = input.files[0] ? input.files[0].name : 'No file chosen';
+        document.getElementById('file-name').textContent = fileName;
+    }
+
+    // Personnel Management JS functions
+    let selectedPersonnelId = null; // Global variable for selected personnel
+
+    function openAddPersonnelModal() {
+        openModal('modal-add-employee');
+    }
+
+    function openEditModal(id) {
+        fetch(`{{ url_for('personnel.get_personnel', personnel_id=0) }}`.replace('0', id))
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById('edit-employee-id').value = data.id;
+                document.getElementById('edit-employee-name').value = data.name;
+                document.getElementById('edit-employee-division').value = data.division.id;
+                document.getElementById('edit-employee-email').value = data.email;
+                document.getElementById('edit-employee-username').value = data.username;
+                document.getElementById('edit-employee-password').value = ''; // Clear password for security
+                openModal('modal-edit-employee');
+            })
+            .catch(error => {
+                console.error('Error fetching employee data:', error);
+                Swal.fire('Error!', 'Failed to load employee data.', 'error');
+            });
+    }
+
+    function openPersonnelDetailModal(personnelId, personnelName) {
+        fetch(`{{ url_for('personnel.get_personnel', personnel_id=0) }}`.replace('0', personnelId))
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById('personnelNameText').innerText = data.name;
+                document.getElementById('personnelGender').innerText = data.gender === 'F' ? 'Female' : (data.gender === 'M' ? 'Male' : 'Unknown');
+                document.getElementById('personnelEmploymentStatus').innerText = data.employment_status === 'I' ? 'Intern' : (data.employment_status === 'S' ? 'Staff' : 'Unknown');
+                // Ensure profile_image path is correct relative to static files
+                // Assuming data.profile_image from backend is like 'img/personnel_pics/Name/image.jpg'
+                document.getElementById('profileImage').src = data.profile_image ? `{{ url_for('static', filename='') }}${data.profile_image}` : '{{ url_for('static', filename='img/user_default.png') }}';
+                
+                fetch(`{{ url_for('personnel.attendance_details', personnel_id=0) }}`.replace('0', personnelId))
+                    .then(response => response.json())
+                    .then(attendanceData => {
+                        document.getElementById('totalPresence').innerText = attendanceData.total_presence;
+                        document.getElementById('totalOntime').innerText = attendanceData.total_ontime;
+                        document.getElementById('totalLate').innerText = attendanceData.total_late;
+                        document.getElementById('totalAbsence').innerText = attendanceData.total_absence;
+                        openModal('modal-detail-employee');
+                    });
+            })
+            .catch(error => {
+                console.error('Error fetching personnel details:', error);
+                Swal.fire('Error!', 'Failed to load personnel details.', 'error');
+            });
+    }
+
+    function openDatasetPage(personnelId) {
+        // This will redirect to the /face/dataset/<id> route
+        window.location.href = `{{ url_for('face.dataset_no_id', personnel_id=0) }}`.replace('0', personnelId);
+    }
+
+    function addEmployee() {
+        const form = document.getElementById('add-employee-form');
+        const formData = new FormData(form);
+        
+        fetch("{{ url_for('personnel.add_personnel') }}", {
+            method: 'POST',
+            body: formData, // FormData handles Content-Type and CSRF automatically if using Flask-WTF or custom CSRF
+            headers: {
+                'X-CSRFToken': getCsrfToken() // Include CSRF if your Flask-WTF setup requires it
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                Swal.fire({ title: 'Success!', text: data.message, icon: 'success' }).then(() => {
+     
+                    location.reload();
+                });
+            } else {
+                Swal.fire({ title: 'Error!', text: data.message, icon: 'error' });
+            }
+        })
+        .catch(error => {
+            console.error('Error adding employee:', error);
+            Swal.fire({ title: 'Error!', text: 'An error occurred while adding the personnel.', icon: 'error' });
+        });
+    }
+
+    function updateEmployee() {
+        const employeeId = document.getElementById('edit-employee-id').value;
+        const form = document.getElementById('edit-employee-form');
+        const formData = new FormData(form);
+        
+        fetch(`{{ url_for('personnel.edit_personnel', personnel_id=0) }}`.replace('0', employeeId), {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-CSRFToken': getCsrfToken()
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                Swal.fire({ title: 'Success!', text: data.message, icon: 'success' }).then(() => {
+       
+                    location.reload();
+                });
+            } else {
+                Swal.fire({ title: 'Error!', text: data.message, icon: 'error' });
+            }
+        })
+        .catch(error => {
+            console.error('Error updating employee:', error);
+            Swal.fire({ title: 'Error!', text: 'An error occurred while updating the personnel.', icon: 'error' });
+        });
+    }
+
+    function deleteEmployee(employeeId) {
+        Swal.fire({
+            title: 'Are you sure?',
+            text: "You won't be able to revert this!",
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#3085d6',
+            cancelButtonColor: '#d33',
+            confirmButtonText: 'Yes, delete it!'
+        }).then((result) => {
+            if (result.isConfirmed) {
+                fetch(`{{ url_for('personnel.delete_personnel', personnel_id=0) }}`.replace('0', employeeId), {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRFToken': getCsrfToken()
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        Swal.fire('Deleted!', 'Employee has been deleted.', 'success').then(() => {
+                            location.reload();
+                        });
+                    } else {
+                        Swal.fire('Error!', data.message, 'error');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error deleting employee:', error);
+                    Swal.fire('Error!', 'An error occurred while deleting the employee.', 'error');
+                });
+            }
+        });
+    }
+
+    // Filtering and Search for Employee Table (Client-side)
+    document.addEventListener('DOMContentLoaded', function() {
+        const personnelTableBody = document.getElementById('personnelTableBody');
+        const searchInput = document.getElementById('searchInput');
+        const divisionFilter = document.getElementById('divisionFilter');
+        const personnelPagination = document.getElementById('personnel-pagination');
+
+        const allTableRows = Array.from(personnelTableBody.children); // Get all original rows
+        
+        let currentPage = 1;
+        let entriesPerPage = 10; // Default entries per page, can be dynamic
+        let filteredRows = [];
+
+        function renderPersonnelTable() {
+            const searchTerm = searchInput.value.toLowerCase();
+            const selectedDivisionId = divisionFilter.value;
+
+            filteredRows = allTableRows.filter(row => {
+                const employeeName = row.children[2].textContent.toLowerCase();
+                const employeeEmail = row.children[4].textContent.toLowerCase();
+                const employeeUsername = row.children[5].textContent.toLowerCase();
+                const rowDivisionId = row.getAttribute('data-division');
+
+                const matchesSearch = (employeeName.includes(searchTerm) || 
+                                       employeeEmail.includes(searchTerm) || 
+                                       employeeUsername.includes(searchTerm));
+                
+                const matchesDivision = (selectedDivisionId === "" || rowDivisionId === selectedDivisionId);
+
+                return matchesSearch && matchesDivision;
+            });
+
+            const totalFiltered = filteredRows.length;
+            const totalPages = Math.ceil(totalFiltered / entriesPerPage);
+
+            // Adjust currentPage if it's out of bounds after filtering
+            if (currentPage > totalPages && totalPages > 0) {
+                currentPage = totalPages;
+            } else if (totalPages === 0) {
+                currentPage = 1;
+            }
+
+            const start = (currentPage - 1) * entriesPerPage;
+            const end = start + entriesPerPage;
+
+            // Clear table and append filtered and paginated rows
+            personnelTableBody.innerHTML = '';
+            filteredRows.slice(start, end).forEach((row, index) => {
+                const newRow = row.cloneNode(true);
+                newRow.children[0].textContent = start + index + 1; // Update 'No.' column
+                personnelTableBody.appendChild(newRow);
+            });
+
+            // Display "No data" message if no filtered rows
+            if (filteredRows.length === 0) {
+                const noDataRow = document.createElement('tr');
+                noDataRow.innerHTML = `<td colspan="9" class="text-center">No employees found matching criteria.</td>`;
+                personnelTableBody.appendChild(noDataRow);
+            }
+
+            // Update pagination info and links
+            document.querySelector('.card-footer p.m-0 span:nth-child(1)').textContent = totalFiltered > 0 ? start + 1 : 0;
+            document.querySelector('.card-footer p.m-0 span:nth-child(2)').textContent = Math.min(end, totalFiltered);
+            document.querySelector('.card-footer p.m-0 span:nth-child(3)').textContent = totalFiltered; // Display filtered total
+            
+            renderPersonnelPagination(totalPages);
+        }
+
+        function renderPersonnelPagination(totalPages) {
+            personnelPagination.innerHTML = '';
+
+            // Previous button
+            if (currentPage > 1) {
+                const prevItem = document.createElement('li');
+                prevItem.className = 'page-item';
+                const prevLink = document.createElement('a');
+                prevLink.className = 'page-link';
+                prevLink.href = '#';
+                prevLink.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z"/><polyline points="15 6 9 12 15 18" /></svg> prev`;
+                prevLink.addEventListener('click', function (e) { e.preventDefault(); currentPage--; renderPersonnelTable(); });
+                prevItem.appendChild(prevLink);
+                personnelPagination.appendChild(prevItem);
+            } else {
+                const prevItem = document.createElement('li');
+                prevItem.className = 'page-item disabled';
+                prevItem.innerHTML = `<a class="page-link" href="#" tabindex="-1"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z"/><polyline points="15 6 9 12 15 18" /></svg> prev</a>`;
+                personnelPagination.appendChild(prevItem);
+            }
+
+            // Page numbers
+            for (let i = 1; i <= totalPages; i++) {
+                const pageItem = document.createElement('li');
+                pageItem.className = 'page-item' + (i === currentPage ? ' active' : '');
+                const pageLink = document.createElement('a');
+                pageLink.className = 'page-link';
+                pageLink.href = '#';
+                pageLink.textContent = i;
+                pageLink.addEventListener('click', function (e) { e.preventDefault(); currentPage = i; renderPersonnelTable(); });
+                pageItem.appendChild(pageLink);
+                personnelPagination.appendChild(pageItem);
+            }
+
+            // Next button
+            if (currentPage < totalPages) {
+                const nextItem = document.createElement('li');
+                nextItem.className = 'page-item';
+                const nextLink = document.createElement('a');
+                nextLink.className = 'page-link';
+                nextLink.href = '#';
+                nextLink.innerHTML = `next <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z"/><polyline points="9 6 15 12 9 18" /></svg>`;
+                nextLink.addEventListener('click', function (e) { e.preventDefault(); currentPage++; renderPersonnelTable(); });
+                nextItem.appendChild(nextLink);
+                personnelPagination.appendChild(nextItem);
+            } else {
+                const nextItem = document.createElement('li');
+                nextItem.className = 'page-item disabled';
+                nextItem.innerHTML = `<a class="page-link" href="#" tabindex="-1">next <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z"/><polyline points="9 6 15 12 9 18" /></svg></a>`;
+                personnelPagination.appendChild(nextItem);
+            }
+        }
+
+        // Initial render on load
+        renderPersonnelTable();
+
+        // Event listeners for filters and search
+        searchInput.addEventListener('input', () => { currentPage = 1; renderPersonnelTable(); });
+        divisionFilter.addEventListener('change', () => { currentPage = 1; renderPersonnelTable(); });
+    });
+</script>
+{% endblock %}

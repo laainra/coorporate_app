@@ -1,0 +1,253 @@
+{% if current_user.is_authenticated %} 
+
+<header class="navbar navbar-expand-md navbar-light">
+    <div class="container-xl">
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar-menu"> {# data-toggle -> data-bs-toggle, data-target -> data-bs-target #}
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <a href="{{ url_for('auth.index') }}" class="navbar-brand navbar-brand-autodark d-none-navbar-horizontal pe-0 pe-md-3"> {# . -> url_for('auth.index'), pr-0 -> pe-0, pr-md-3 -> pe-md-3 #}
+        <img src="{{ url_for('static', filename='img/logo_color_2.png') }}" alt="Tabler" class="navbar-brand-image"> {# {% static %} -> url_for #}
+      </a>
+           {% block title %}
+      <!-- Default kosong, akan diisi dari halaman -->
+      {% endblock %}
+      <div class="navbar-nav flex-row order-md-last">
+        <div class="nav-item dropdown d-none d-md-flex me-3"> {# mr-3 -> me-3 #}
+          {# Commented out Django notifications #}
+        </div>
+        <div class="nav-item dropdown">
+          <a href="#" class="nav-link d-flex lh-1 text-reset p-0" data-bs-toggle="dropdown"> {# data-toggle -> data-bs-toggle #}
+            <i class="fas fa-cog ms-2" style="font-size: 1.5rem; cursor: pointer;"></i> {# ml-2 -> ms-2 #}
+            <div class="d-none d-xl-block ps-2"> {# pl-2 -> ps-2 #}
+              <div>{{ current_user.username }}</div> {# user.username -> current_user.username #}
+              <div class="mt-1 small text-muted">{{ current_user.role }}</div> {# user.role -> current_user.role #}
+            </div>
+          </a>
+          <div class="dropdown-menu dropdown-menu-right">
+            <a class="dropdown-item" href="{{ url_for('settings.profile') }}"> {# {% url %} -> url_for #}
+              <svg xmlns="http://www.w3.org/2000/svg" class="icon dropdown-item-icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z"></path><circle cx="12" cy="7" r="4"></circle><path d="M5.5 21v-2a4 4 0 0 1 4 -4h5a4 4 0 0 1 4 4v2"></path></svg>
+              Profile
+            </a>
+            <div class="dropdown-divider"></div>
+            <a class="dropdown-item" href="{{ url_for('auth.logout') }}"> {# {% url %} -> url_for #}
+              <svg xmlns="http://www.w3.org/2000/svg" class="icon dropdown-item-icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z"></path><path d="M14 8v-2a2 2 0 0 0 -2 -2h-7a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h7a2 2 0 0 0 2 -2v-2"></path><path d="M7 12h14l-3 -3m0 6l3 -3"></path></svg>
+              Logout
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+</header>
+
+{# Superadmin Navigation #}
+{% if current_user.role == 'superadmin' %}
+<div class="navbar-expand-md">
+    <div class="collapse navbar-collapse" id="navbar-menu">
+        <div class="navbar navbar-light">
+            <div class="container-xl">
+                <ul class="navbar-nav">
+                    <li class="nav-item {% if request.path == url_for('superadmin.dashboard') %}active{% endif %}"> {# {% if request.path == '/superadmin/' %}active{% endif %} -> url_for #}
+                        <a class="nav-link" href="{{ url_for('superadmin.dashboard') }}" > {# {% url %} -> url_for #}
+                            <span class="nav-link-icon d-md-none d-lg-inline-block"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z"/><polyline points="5 12 3 12 12 3 21 12 19 12" /><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-7" /><path d="M9 21v-6a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2v6" /></svg>
+                            </span>
+                            <span class="nav-link-title">
+                                Dashboard
+                            </span>
+                        </a>
+                    </li>
+                    <li class="nav-item {% if request.path == url_for('superadmin.company') %}active{% endif %}"> {# {% if request.path == '/superadmin/company_list/' %}active{% endif %} -> url_for #}
+                        <a class="nav-link" href="{{ url_for('superadmin.company') }}" > {# {% url %} -> url_for #}
+                            <span class="nav-link-icon d-md-none d-lg-inline-block">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z"></path><circle cx="12" cy="7" r="4"></circle><path d="M5.5 21v-2a4 4 0 0 1 4 -4h5a4 4 0 0 1 4 4v2"></path></svg>
+                            </span>
+                            <span class="nav-link-title">
+                                User Admin
+                            </span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# Admin Navigation #}
+{% elif current_user.role == 'admin' %}
+<div class="navbar-expand-md">
+    <div class="collapse navbar-collapse" id="navbar-menu">
+        <div class="navbar navbar-light">
+            <div class="container-xl">
+                <ul class="navbar-nav">
+                    <li class="nav-item {% if request.path == url_for('admin.dashboard') %}active{% endif %}"> {# {% if request.path == '/dashboard/' %}active{% endif %} -> url_for #}
+                        <a class="nav-link" href="{{ url_for('admin.dashboard') }}" > {# {% url %} -> url_for #}
+                            <span class="nav-link-icon d-md-none d-lg-inline-block"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z"/><polyline points="5 12 3 12 12 3 21 12 19 12" /><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-7" /><path d="M9 21v-6a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2v6" /></svg>
+                            </span>
+                            <span class="nav-link-title">
+                                Dashboard
+                            </span>
+                        </a>
+                    </li>
+                    <li class="nav-item dropdown {% if request.path == url_for('admin.presence_cam_stream') or request.path == url_for('admin.presence') %}active{% endif %}"> {# Adjusted logic for active state #}
+                        <a class="nav-link dropdown-toggle" href="#" data-bs-toggle="dropdown" role="button" aria-expanded="false" > {# data-toggle -> data-bs-toggle #}
+                            <span class="nav-link-icon d-md-none d-lg-inline-block">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="icon icon-md" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z"></path><polyline points="14 3 14 8 19 8"></polyline><path d="M17 21h-10a2 2 0 0 1 -2 -2v-14a2 2 0 0 1 2 -2h7l5 5v11a2 2 0 0 1 -2 2z"></path><line x1="9" y1="9" x2="10" y2="9"></line><line x1="9" y1="13" x2="15" y2="13"></line><line x1="9" y1="17" x2="15" y2="17"></line></svg>
+                            </span>
+                            <span class="nav-link-title">
+                                Presence
+                            </span>
+                        </a>
+                        <ul class="dropdown-menu">
+                            <li >
+                                <a class="dropdown-item {% if 'presence_stream' in request.path %}active{% endif %}" href="{{ url_for('admin.presence_cam_stream') }}" > {# Check if path contains 'presence_stream' #}
+                                    Presence Camera Streaming
+                                </a>
+                            </li>
+                            <li >
+                                <a class="dropdown-item {% if request.path == url_for('admin.presence') %}active{% endif %}" href="{{ url_for('admin.presence') }}" > {# {% url %} -> url_for #}
+                                    Presence Report
+                                </a>
+                            </li>
+                        </ul>
+                    </li>
+                    <li class="nav-item dropdown {% if 'tracking_stream' in request.path or request.path == url_for('admin.tracking_cam_stream') or request.path == url_for('admin.work_time_report') or request.path == url_for('admin.tracking_report') %}active{% endif %}"> {# Adjusted logic for active state #}
+                        <a class="nav-link dropdown-toggle" href="#" data-bs-toggle="dropdown" role="button" aria-expanded="false" > {# data-toggle -> data-bs-toggle #}
+                            <span class="nav-link-icon d-md-none d-lg-inline-block">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="icon icon-md" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z"></path><rect x="3" y="4" width="18" height="12" rx="1"></rect><line x1="7" y1="20" x2="17" y2="20"></line><line x1="9" y1="16" x2="9" y2="20"></line><line x1="15" y1="16" x2="15" y2="20"></line></svg>
+                            </span>
+                            <span class="nav-link-title">
+                                Employee Tracking
+                            </span>
+                        </a>
+                        <ul class="dropdown-menu">
+                            <li >
+                                <a class="dropdown-item {% if 'tracking_stream' in request.path %}active{% endif %}" href="{{ url_for('admin.tracking_cam_stream') }}" > {# Check if path contains 'tracking_stream' #}
+                                    Tracking Camera Streaming
+                                </a>
+                            </li>
+                            <li >
+                                <a class="dropdown-item {% if request.path == url_for('admin.work_time_report') %}active{% endif %}" href="{{ url_for('admin.work_time_report') }}" > {# {% url %} -> url_for #}
+                                    Work Time Report
+                                </a>
+                            </li>
+                            <li >
+                                <a class="dropdown-item {% if request.path == url_for('admin.tracking_report') %}active{% endif %}" href="{{ url_for('admin.tracking_report') }}" > {# {% url %} -> url_for #}
+                                    Tracking Report
+                                </a>
+                            </li>
+                        </ul>
+                    </li>
+                    <li class="nav-item dropdown {% if  request.path == url_for('admin.presence_cam') or request.path == url_for('admin.tracking_cam') %}active{% endif %}"> {# Adjusted logic for active state #}
+                        <a class="nav-link dropdown-toggle" href="#" data-bs-toggle="dropdown" role="button" aria-expanded="false" > {# data-toggle -> data-bs-toggle #}
+                            <span class="nav-link-icon d-md-none d-lg-inline-block">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="icon icon-md" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z"></path><path d="M3 21h4l13 -13a1.5 1.5 0 0 0 -4 -4l-13 13v4"></path><line x1="14.5" y1="5.5" x2="18.5" y2="9.5"></line><polyline points="12 8 7 3 3 7 8 12"></polyline><line x1="7" y1="8" x2="5.5" y2="9.5"></line><polyline points="16 12 21 17 17 21 12 16"></polyline><line x1="16" y1="17" x2="14.5" y2="18.5"></line></svg>
+                            </span>
+                            <span class="nav-link-title">
+                                Configuration
+                            </span>
+                        </a>
+                        <ul class="dropdown-menu">
+                      
+                            <li >
+                                <a class="dropdown-item {% if request.path == url_for('admin.presence_cam') %}active{% endif %}" href="{{ url_for('admin.presence_cam') }}" > {# {% url %} -> url_for #}
+                                    Presence Camera
+                                </a>
+                            </li>
+                            <li >
+                                <a class="dropdown-item {% if request.path == url_for('admin.tracking_cam') %}active{% endif %}" href="{{ url_for('admin.tracking_cam') }}" > {# {% url %} -> url_for #}
+                                    Tracking Camera
+                                </a>
+                            </li>
+                        </ul>
+                    </li>
+                    <li class="nav-item dropdown {% if request.path == url_for('admin.division') or request.path == url_for('personnel.personnels') %}active{% endif %}"> {# Adjusted logic for active state #}
+                        <a class="nav-link dropdown-toggle" href="#" data-bs-toggle="dropdown" role="button" aria-expanded="false" > {# data-toggle -> data-bs-toggle #}
+                            <span class="nav-link-icon d-md-none d-lg-inline-block">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="icon icon-md" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z"></path><ellipse cx="12" cy="6" rx="8" ry="3"></ellipse><path d="M4 6v6a8 3 0 0 0 16 0v-6"></path><path d="M4 12v6a8 3 0 0 0 16 0v-6"></path></svg>
+                            </span>
+                            <span class="nav-link-title">
+                                Database
+                            </span>
+                        </a>
+                        <ul class="dropdown-menu">
+                            <li >
+                                <a class="dropdown-item {% if request.path == url_for('admin.division') %}active{% endif %}" href="{{ url_for('admin.division') }}" > {# {% url %} -> url_for #}
+                                    Divison Data
+                                </a>
+                            </li>
+                            <li >
+                                <a class="dropdown-item {% if request.path == url_for('admin.employees') %}active{% endif %}" href="{{ url_for('admin.employees') }}" > {# {% url %} -> url_for #}
+                                    Employee Data
+                                </a>
+                            </li>
+                        </ul>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# Employee Navigation #}
+{% elif current_user.role == 'employee' %}
+<div class="navbar-expand-md">
+    <div class="collapse navbar-collapse" id="navbar-menu">
+        <div class="navbar navbar-light">
+            <div class="container-xl">
+                <ul class="navbar-nav">
+                    <li class="nav-item {% if request.path == url_for('employee.dashboard') %} active{% endif %}"> {# {% if request.path == '/employee/' %}active{% endif %} -> url_for #}
+                        <a class="nav-link" href="{{ url_for('employee.dashboard') }}" > {# {% url %} -> url_for #}
+                            <span class="nav-link-icon d-md-none d-lg-inline-block"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z"/><polyline points="5 12 3 12 12 3 21 12 19 12" /><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-7" /><path d="M9 21v-6a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2v6" /></svg>
+                            </span>
+                            <span class="nav-link-title">
+                                Dashboard
+                            </span>
+                        </a>
+                    </li>
+                    <li class="nav-item {% if request.path == url_for('employee.presence_history') %}active{% endif %}"> {# {% if request.path == '/employee/presence_history/' %}active{% endif %} -> url_for #}
+                        <a class="nav-link" href="{{ url_for('employee.presence_history') }}" > {# {% url %} -> url_for #}
+                            <span class="nav-link-icon d-md-none d-lg-inline-block">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z"></path><circle cx="12" cy="7" r="4"></circle><path d="M5.5 21v-2a4 4 0 0 1 4 -4h5a4 4 0 0 1 4 4v2"></path></svg>
+                            </span>
+                            <span class="nav-link-title">
+                                Presence History
+                            </span>
+                        </a>
+                    </li>
+                    {# Predict / Take Image link (uncommented and fixed) #}
+                    <li class="nav-item {% if request.path == url_for('face.capture_page') %}active{% endif %}"> {# {% if request.path == '/capture/' %}active{% endif %} -> url_for #}
+                        <a class="nav-link" href="{{ url_for('face.capture_page') }}" > {# {% url %} -> url_for #}
+                            <span class="nav-link-icon d-md-none d-lg-inline-block">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                                    <path stroke="none" d="M0 0h24v24H0z"></path>
+                                    <path d="M4 8v-2a2 2 0 0 1 2 -2h3l2 -2h2l2 2h3a2 2 0 0 1 2 2v2"></path>
+                                    <circle cx="12" cy="13" r="3"></circle>
+                                    <path d="M9 21h6"></path>
+                                </svg>
+                            </span>
+                            <span class="nav-link-title">
+                                Take Image
+                            </span>
+                        </a>
+                    </li>
+                    <li class="nav-item {% if request.path == url_for('stream.dataset_no_id') %}active{% endif %}"> {# {% if request.path == '/dataset/' %}active{% endif %} -> url_for #}
+                        <a class="nav-link" href="{{ url_for('stream.dataset_no_id') }}"> {# {% url %} -> url_for #}
+                            <span class="nav-link-icon d-md-none d-lg-inline-block">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                                    <path stroke="none" d="M0 0h24v24H0z"></path>
+                                    <ellipse cx="12" cy="6" rx="6" ry="3"></ellipse>
+                                    <path d="M6 6v6a6 3 0 0 0 12 0v-6"></path>
+                                    <path d="M6 12v6a6 3 0 0 0 12 0v-6"></path>
+                                </svg>
+                            </span>
+                            <span class="nav-link-title">
+                                View Dataset
+                            </span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %} {# End if current_user.role == 'employee' #}
+{% endif %} {# End if current_user.is_authenticated #}

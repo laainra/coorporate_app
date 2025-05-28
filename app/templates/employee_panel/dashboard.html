@@ -1,0 +1,122 @@
+{% extends "components/base.html" %}
+{% block title %}
+Employee Dashboard
+{% endblock %}
+
+{% block content %}
+{# {% csrf_token %} is a Django tag and is not needed here in Flask. CSRF token is handled via meta tag in base.html and JavaScript. #}
+
+<div class="content">
+    <div class="container-xl">
+    <div class="header mb-4">
+            <div class="row align-items-center justify-content-between gx-4">
+                <div class="col-auto">
+                    <div class="page-pretitle">
+                        {{ name }}'s
+                    </div>
+                    <h2 class="page-title">Dashboard</h2>
+                </div>
+            </div>
+        </div>
+
+        <div class="row row-deck row-cards">
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title">Today's Presence Summary - <span id="today-date-summary"></span></h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="row text-center">
+                            <div class="col-sm-3 col-6 mb-3">
+                                <div class="font-weight-medium">Total Entries</div>
+                                <div class="h1 mt-2">{{ today_total_presences }}</div>
+                            </div>
+                            <div class="col-sm-3 col-6 mb-3">
+                                <div class="font-weight-medium">On Time</div>
+                                <div class="h1 mt-2 text-success">{{ today_ontime }}</div>
+                            </div>
+                            <div class="col-sm-3 col-6 mb-3">
+                                <div class="font-weight-medium">Late</div>
+                                <div class="h1 mt-2 text-warning">{{ today_late }}</div>
+                            </div>
+                            <div class="col-sm-3 col-6 mb-3">
+                                <div class="font-weight-medium">Absence/Unknown</div>
+                                <div class="h1 mt-2 text-danger">{{ today_unknown }}</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title">My Presence Today</h3>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table card-table table-vcenter text-nowrap datatable">
+                            <thead>
+                                <tr>
+                                    <th>Time</th>
+                                    <th>Status</th>
+                                    <th>Work Hours</th>
+                                    <th>Notes</th>
+                                    <th>Attendance Image</th>
+                                    <th>Leaving Image</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for entry in presence_data %}
+                                <tr>
+                                    <td>{{ entry.attended | default('-') }}</td>
+                                    <td>
+                                        {% if entry.status == 'ONTIME' %}
+                                            <span class="badge bg-success">ONTIME</span>
+                                        {% elif entry.status == 'LATE' %}
+                                            <span class="badge bg-warning">LATE</span>
+                                        {% elif entry.status == 'LEAVE' %}
+                                            <span class="badge bg-info">LEAVE</span>
+                                        {% else %}
+                                            <span class="badge bg-danger">UNKNOWN</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ entry.work_hours }}</td>
+                                    <td>{{ entry.notes }}</td>
+                                    <td>
+                                        {% if entry.attendance_image_path and entry.attendance_image_path != 'img/no_image.png' %}
+                                            {# Example: entry.attendance_image_path is 'img/presence_images/20240523/presence_JohnDoe_103000.jpg' #}
+                                            <a href="{{ url_for('static', filename=entry.attendance_image_path) }}" target="_blank">View</a>
+                                        {% else %}
+                                            -
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if entry.leaving_image_path and entry.leaving_image_path != 'img/no_image.png' %}
+                                            <a href="{{ url_for('static', filename=entry.leaving_image_path) }}" target="_blank">View</a>
+                                        {% else %}
+                                            -
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% else %}
+                                <tr>
+                                    <td colspan="6" class="text-center">No presence records for today.</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const today = new Date();
+        const formattedDate = today.toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+        document.getElementById('today-date-summary').textContent = formattedDate;
+    });
+</script>
+{% endblock %}

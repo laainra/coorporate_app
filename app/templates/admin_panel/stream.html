@@ -1,0 +1,48 @@
+<!-- filepath: /c:/Users/laila/cctv-people-counting/Website/Dashboard/templates/admin/stream.html -->
+{% extends '../components/base.html' %}
+{% block title %}
+Stream
+{% endblock %}
+
+{% block content %}
+{% csrf_token %}
+<div class="content">
+    <div class="container-xl">
+      <!-- Page title -->
+      <div class="page-header">
+        <div class="row align-items-center">
+          <div class="col-auto">
+            <!-- Page pre-title -->
+            <div class="page-pretitle">
+              {{cam.name}}'s
+            </div>
+            <h2 class="page-title">
+                Stream
+            </h2>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-body">
+                    <div id="loader" class="spinner-border text-primary" role="status" style="display: none;">
+                        <span class="sr-only">Loading...</span>
+                    </div>
+                    {%if cam.role_camera == "T"  %}
+                     <img id="img_stream" src="{% url 'tracking_cam_feed' cam.id %}" style="width: 100%; border-radius: 10px; z-index: 1001; position: relative; {% if cam.cam_is_active %}display: block;{% else %}display: none;{% endif %}" /> 
+                     {% else%}
+                     <img id="img_stream" src="{% url 'presence_cam_feed' cam.id %}" style="width: 100%; border-radius: 10px; z-index: 1001; position: relative; {% if cam.cam_is_active %}display: block;{% else %}display: none;{% endif %}" /> 
+                     {%endif%}
+                    </div>
+                {% comment %} <div class="card-footer d-flex justify-content-center">
+                    <button type="button" class="btn btn-primary mr-2" id="start-stream" {% if cam.cam_is_active %}style="display: none;"{% endif %}>Start Stream</button>
+                    <button type="button" class="btn btn-danger" id="stop-stream" {% if cam.cam_is_active %}style="display: inline-block;"{% else %}style="display: none;"{% endif %}>Stop Stream</button>
+                </div> {% endcomment %}
+            </div>
+        </div>
+      </div>
+    </div>
+</div>
+
+{% endblock %}

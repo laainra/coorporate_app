@@ -1,0 +1,123 @@
+{% extends 'components/base.html' %}
+{% block title %}
+Presence History
+{% endblock %}
+
+{% block content %} 
+{# {% csrf_token %} is a Django tag and is not needed here in Flask. CSRF token is handled via meta tag in base.html and JavaScript. #}
+
+<div class="content">
+    <div class="container-xl">
+    <div class="header mb-4">
+            <div class="row align-items-center justify-content-between gx-4">
+                <div class="col-auto">
+                    <div class="page-pretitle">
+                        Employee
+                    </div>
+                    <h2 class="page-title">
+                        Presence History
+                    </h2>
+                </div>
+            </div>
+        </div>
+        <div class="row row-deck row-cards">
+
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-body">
+                        <div class="d-flex mb-3 align-items-end"> {# Add align-items-end to align items at the bottom #}
+                            <div style="max-width: 250px;" class="me-2"> {# mr-2 -> me-2 #}
+                                <div class="input-icon">
+                                    <form method="GET" id="filterForm">
+                                        <label for="calendar-range" class="form-label">Select Date:</label> {# Added label #}
+                                        <input id="calendar-range" type="date" name="date" class="form-control" onchange="this.form.submit()" />
+                                    </form>
+                                </div>
+                                <p class="mt-2">Selected Date: <span id="selected-date">{{ selected_date|default('-')}}</span></p>
+                            </div>
+                            {# Add ms-auto to push other content if any, or to ensure filter is left-aligned #}
+                            <div class="ms-auto"></div> 
+                        </div>
+                        <div class="d-flex mb-3">
+                            <div class="table-responsive w-100">
+                                <table class="table card-table table-vcenter text-nowrap datatable text-center">
+                                    <thead>
+                                        <tr>
+                                            <th class="w-1">No.</th>
+                                            <th>Date</th>
+                                            <th>Attendance Time</th>
+                                            <th>Attendance Image</th>
+                                            <th>Leaving Time</th>
+                                            <th>Leaving Image</th>
+                                            <th>Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for entry in presence_data %}
+                                        <tr>
+                                            <td>{{ loop.index }}</td> {# forloop.counter -> loop.index #}
+                                            <td>{{ entry.date }}</td>
+                                            <td>{{ entry.attended }}</td>
+                                            <td>
+                                                {% if entry.attendance_image_path and entry.attendance_image_path != 'img/no_image.png' %}
+                                                    <a href="{{ url_for('static', filename=entry.attendance_image_path) }}" target="_blank">View</a>
+                                                {% else %}
+                                                    -
+                                                {% endif %}
+                                            </td>
+                                            <td>{{ entry.leave }}</td>
+                                            <td>
+                                                {% if entry.leaving_image_path and entry.leaving_image_path != 'img/no_image.png' %}
+                                                    <a href="{{ url_for('static', filename=entry.leaving_image_path) }}" target="_blank">View</a>
+                                                {% else %}
+                                                    -
+                                                {% endif %}
+                                            </td>
+                                            <td>
+                                                {% if entry.status == 'ONTIME' %}
+                                                    <span class="badge bg-success">ONTIME</span>
+                                                {% elif entry.status == 'LATE' %}
+                                                    <span class="badge bg-warning">LATE</span>
+                                                {% elif entry.status == 'LEAVE' %}
+                                                    <span class="badge bg-info">LEAVE</span>
+                                                {% else %}
+                                                    <span class="badge bg-danger">UNKNOWN</span>
+                                                {% endif %}
+                                            </td>
+                                        </tr>
+                                        {% else %} {# empty -> else #}
+                                        <tr>
+                                            <td colspan="7" class="text-center">No presence records found.</td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+        const dateInput = document.getElementById("calendar-range");
+        // Initialize Flatpickr only if the element exists
+        if (dateInput) {
+            flatpickr(dateInput, {
+                dateFormat: "Y-m-d" // Ensure correct date format
+            });
+
+            // Set the initial selected date display
+            document.getElementById("selected-date").innerText = dateInput.value || "-";
+        }
+    });
+
+    document.getElementById("calendar-range").addEventListener("change", function() {
+        let selectedDate = this.value;
+        document.getElementById("selected-date").innerText = selectedDate || "-";
+    });
+</script>
+{% endblock %}

@@ -1,0 +1,104 @@
+{% extends "components/base.html" %} 
+{% block title %} Login {% endblock %}
+
+{% block content %}
+
+<style>
+    /* Custom styles for the login card */
+    .custom-login-card {
+        max-width: 480px; /* Adjust max-width as desired for a larger container */
+        width: 100%;
+        margin-left: auto;
+        margin-right: auto;
+    }
+
+    /* Style for larger labels and input text (optional, adjust as needed) */
+    .custom-login-card .form-label {
+        font-size: 1.1rem; /* Slightly larger font for labels */
+        font-weight: 500;
+    }
+
+    .custom-login-card .form-control {
+        font-size: 1rem; /* Adjust input font size if needed */
+    }
+
+    .custom-login-card .btn {
+        font-size: 1.1rem; /* Larger font for button */
+        padding: 0.75rem 1.25rem; /* Larger padding for button */
+    }
+
+    /* Ensure text in form-label-description is also appropriately sized */
+    .custom-login-card .form-label-description {
+        font-size: 0.9rem; /* Adjust if needed */
+    }
+</style>
+
+{# Use flexbox on the main content area to center the login card #}
+<div class="flex-fill d-flex flex-column justify-content-center align-items-center">
+    {# Removed container-tight directly here to use custom-login-card class for more control #}
+    {# The outer div with centering classes already handles responsiveness. #}
+    <div class="custom-login-card"> {# Custom class for width control #}
+        <div class="text-center mb-4">
+            {# Increase logo size using width/height directly or custom CSS #}
+            <img src="{{ url_for('static', filename='img/logo_color_2.png') }}" height="100" alt="Logo" style="width: auto; max-width: 250px;"> {# Increased height and added max-width #}
+        </div>
+        
+        {# Added shadow-lg for a strong shadow effect #}
+        {# Added px-5 py-4 for larger padding within the card-body, matching original Django structure #}
+        <form class="card shadow-lg" action="{{ url_for('auth.login') }}" method="post">
+            <div class="card-body p-4"> {# Changed to p-4 for general padding, adjust if needed #}
+                {# Changed h5 to h3 for larger title #}
+                <h3 class="mb-5 text-center">Login to your account</h3> 
+                
+             
+                
+                <div class="mb-3">
+                    <label class="form-label">Username</label>
+                    <input type="text" class="form-control" name="username" autocomplete="off" required>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label">
+                        Password
+                 
+                    </label>
+                    <div class="input-group input-group-flat">
+                        <input type="password" class="form-control" name="password" required>
+                        <span class="input-group-text">
+                            <a href="#" class="link-secondary" title="Show password" onclick="togglePassword(this, event)">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z"/><circle cx="12" cy="12" r="2" /><path d="M2 12l1.5 2a11 11 0 0 0 17 0l1.5 -2" /><path d="M2 12l1.5 -2a11 11 0 0 1 17 0l1.5 2" /></svg>
+                            </a>
+                        </span>
+                    </div>
+                </div>
+                <div class="mb-2">
+                    <label class="form-check">
+                        <input type="checkbox" class="form-check-input" name="remember"/>
+                        <span class="form-check-label">Remember me on this device</span>
+                    </label>
+                </div>
+                <div class="form-footer">
+                    <button type="submit" class="btn btn-primary btn-block w-100">Sign in</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+{# Custom JavaScript for password toggle #}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        document.body.style.display = "block"; // Ensure body is visible after DOM loads
+    });
+    
+    function togglePassword(link, event) {
+        event.preventDefault(); // Prevent default link behavior
+        var input = link.closest('.input-group').querySelector('input');
+        if (input.type === "password") {
+            input.type = "text";
+        } else {
+            input.type = "password";
+        }
+    }
+</script>
+
+{% endblock %}
