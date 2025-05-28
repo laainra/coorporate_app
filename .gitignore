@@ -1,6 +1,20 @@
+# Python
 __pycache__/
-*.pyc
-venv/
+*.py[cod]
+*.so
+
+# Env & IDE
 .env
+.venv/
+venv/
+venv_coorporate_app/
+*.egg-info/
 instance/
 media/
+
+# VSCode
+.vscode/
+
+# Jupyter & logs
+.ipynb_checkpoints/
+*.log
