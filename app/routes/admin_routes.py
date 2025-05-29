@@ -4,7 +4,7 @@ from app.models import Company, Divisions, Personnels, Personnel_Entries, Camera
 from app import db # Import instance db
 from app.utils.decorators import admin_required # Decorators
 from datetime import datetime, date, timedelta # Import timedelta
-from sqlalchemy import func, cast, Date, and_
+from sqlalchemy import func, cast, Date, and_, text
 import io
 import pandas as pd
 from werkzeug.utils import secure_filename # Untuk upload file
@@ -141,7 +141,7 @@ def dashboard():
 @login_required
 @admin_required
 def division():
-    company = Company.query.filter_by(user_id=current_user).first()
+    company = Company.query.filter_by(user_id=current_user.id).first()
     if not company:
         flash("Admin account not linked to a company.", "danger")
         return redirect(url_for('auth.login'))
@@ -154,7 +154,7 @@ def division():
 @login_required
 @admin_required
 def get_divisions():
-    company = Company.query.filter_by(user_id=current_user).first()
+    company = Company.query.filter_by(user_id=current_user.id).first()
     if not company:
         return jsonify({'status': 'error', 'message': 'User does not belong to any company'}), 403
     
@@ -166,7 +166,7 @@ def get_divisions():
 @login_required
 @admin_required
 def add_division():
-    company = Company.query.filter_by(user_id=current_user).first()
+    company = Company.query.filter_by(user_id=current_user.id).first()
     if not company:
         return jsonify({'status': 'error', 'message': 'User does not belong to any company'}), 403
 
@@ -256,7 +256,7 @@ def get_division(division_id):
 @login_required
 @admin_required
 def employees():
-    company = Company.query.filter_by(user_id=current_user).first()
+    company = Company.query.filter_by(user_id=current_user.id).first()
     if not company:
         flash("Admin account not linked to a company.", "danger")
         return redirect(url_for('auth.login'))
@@ -269,7 +269,7 @@ def employees():
 @login_required
 @admin_required
 def presence():
-    company = Company.query.filter_by(user_id=current_user).first()
+    company = Company.query.filter_by(user_id=current_user.id).first()
     if not company:
         flash("Admin account not linked to a company.", "danger")
         return redirect(url_for('auth.login'))
@@ -344,111 +344,138 @@ def tracking_cam():
     ).all()
     return render_template('admin_panel/tracking_cam.html', cams=cams)
 
-@bp.route('/work_time_report')
+@bp.route('/work_time_report') # Pastikan URL ini benar
 @login_required
-@admin_required
+# @admin_required
 def work_time_report():
-    company = Company.query.filter_by(user_id=current_user).first()
+    company = Company.query.filter_by(user_id=current_user.id).first()
     if not company:
-        flash("Admin account not linked to a company.", "danger")
+        flash("User tidak terasosiasi dengan perusahaan.", "danger")
         return redirect(url_for('auth.login'))
+
+    personnel_list = Personnels.query.filter_by(company_id=company.id).order_by(Personnels.name).all()
+
+    filter_date_str = request.args.get('filter_date', date.today().strftime('%Y-%m-%d'))
+    try:
+        filter_date_obj = datetime.strptime(filter_date_str, '%Y-%m-%d').date()
+    except ValueError:
+        flash("Format tanggal tidak valid. Menggunakan tanggal hari ini.", "warning")
+        filter_date_str = date.today().strftime('%Y-%m-%d')
+        filter_date_obj = date.today()
+
+    filter_personnel_id_str = request.args.get('filter_personnel_id')
+
+    # --- AWAL PERUBAHAN QUERY ---
+    # Query ini akan mengambil entri work_timer dengan nilai timer tertinggi
+    # untuk setiap personel pada tanggal yang difilter.
+    # Kita menggunakan subquery atau window function untuk ini.
+    # Window function (ROW_NUMBER() OVER (...)) lebih modern dan efisien.
+
+    # PERHATIAN: Sintaks window function mungkin sedikit berbeda antar versi MySQL/MariaDB.
+    # Ini untuk MySQL 8.0+ / MariaDB 10.2+
+    # Jika menggunakan versi lebih lama, pendekatan subquery JOIN mungkin diperlukan.
+
+    sql_query = """
+    WITH RankedWorkTimer AS (
+        SELECT 
+            wt.id AS work_timer_id, 
+            wt.datetime AS entry_datetime, 
+            wt.type AS timer_type, 
+            wt.timer AS timer_seconds, 
+            wt.camera_id, 
+            wt.personnel_id,
+            p.name AS employee_name, 
+            d.name AS employee_division, 
+            cs.cam_name AS camera_name,
+            p.id AS employee_internal_id, 
+            -- Jika ada NIP: p.nomor_induk_pegawai AS employee_display_id,
+            ROW_NUMBER() OVER(PARTITION BY wt.personnel_id ORDER BY wt.timer DESC, wt.datetime DESC) as rn
+        FROM 
+            work_timer wt
+        JOIN 
+            personnels p ON wt.personnel_id = p.id
+        JOIN 
+            camera_settings cs ON wt.camera_id = cs.id
+        JOIN 
+            divisions d ON p.division_id = d.id
+        WHERE 
+            DATE(wt.datetime) = :filter_date AND p.company_id = :company_id 
+            {personnel_filter} -- Placeholder untuk filter personel
+    )
+    SELECT 
+        work_timer_id, entry_datetime, timer_type, timer_seconds, camera_id, personnel_id,
+        employee_name, employee_division, camera_name, employee_internal_id
+        -- Jika ada NIP: , employee_display_id
+    FROM RankedWorkTimer
+    WHERE rn = 1
+    ORDER BY employee_name;
+    """
     
-    # Ambil daftar personel untuk filter dropdown di frontend
-    personnel_list = Personnels.query.filter_by(company_obj=company).all()
+    personnel_filter_sql = ""
+    params = {'filter_date': filter_date_obj, 'company_id': company.id}
 
-    # Ambil tanggal filter dari request, default ke hari ini
-    filter_date_str = request.args.get('filter_date')
-    if filter_date_str:
-        try:
-            filter_date = datetime.strptime(filter_date_str, "%Y-%m-%d").date()
-        except ValueError:
-            flash("Invalid date format. Showing report for today.", "warning")
-            filter_date = date.today()
-    else:
-        filter_date = date.today()
+    if filter_personnel_id_str and filter_personnel_id_str.isdigit():
+        personnel_filter_sql = "AND p.id = :personnel_id"
+        params['personnel_id'] = int(filter_personnel_id_str)
+    
+    final_sql_query = sql_query.format(personnel_filter=personnel_filter_sql)
+    # --- AKHIR PERUBAHAN QUERY ---
 
-    # Adaptasi Raw SQL Query ke SQLAlchemy ORM atau Hybrid
-    # Untuk query yang lebih kompleks dengan join, SQLAlchemy Query Object lebih baik
-    # daripada raw SQL string kecuali untuk performa sangat spesifik.
-    # Kita akan menggunakan join dan filter SQLAlchemy.
+    try:
+        result_proxy = db.session.execute(text(final_sql_query), params)
+        # Setiap baris sudah merupakan data 'timer terakhir' per karyawan
+        last_timer_entries = [row._asdict() for row in result_proxy]
+    except Exception as e:
+        flash(f"Terjadi error saat mengambil data laporan: {e}", "danger")
+        print(f"SQL Query Error: {e}")
+        print(f"Query: {final_sql_query}")
+        print(f"Params: {params}")
+        last_timer_entries = []
 
-    work_time_query = db.session.query(
-        Work_Timer.id,
-        Work_Timer.datetime,
-        Work_Timer.type,
-        Work_Timer.timer,
-        Work_Timer.camera_id,
-        Work_Timer.personnel_id,
-        Personnels.name.label('employee_name'),
-        Divisions.name.label('employee_division'),
-        Camera_Settings.cam_name.label('camera_name')
-    ).join(Personnels, Work_Timer.personnel_id == Personnels.id)\
-     .join(Camera_Settings, Work_Timer.camera_id == Camera_Settings.id)\
-     .join(Divisions, Personnels.division_id == Divisions.id)\
-     .filter(
-        cast(Work_Timer.datetime, Date) == filter_date,
-        Personnels.company_id == company.id
-    ).all() # Ambil semua hasil
-
-    # Agregasi data (menggunakan logika Python/defaultdict yang sama)
-    aggregated_data = defaultdict(lambda: {
-        'total_time_detected': timedelta(),
-        'cctv_areas': set(),
-        'employee_id': None,
-        'employee_name': None,
-        'division': None,
-        'date': None,
-    })
-
-    for entry in work_time_query:
-        timer_seconds = entry.timer
-        personnel_id = entry.personnel_id
-        employee_name = entry.employee_name
-        employee_division = entry.employee_division
-        camera_name = entry.camera_name
-
-        total_time = timedelta(seconds=timer_seconds)
-        aggregated_data[personnel_id]['total_time_detected'] += total_time
+    report_data_final = []
+    # Karena query sudah mengambil timer terakhir per karyawan, agregasi tidak diperlukan lagi
+    # Kita hanya perlu memformat data untuk ditampilkan
+    for entry_dict in last_timer_entries:
+        total_seconds_val = entry_dict.get('timer_seconds', 0)
+        total_hours = total_seconds_val // 3600
+        remaining_seconds_after_hours = total_seconds_val % 3600
+        total_minutes = remaining_seconds_after_hours // 60
+        final_seconds = remaining_seconds_after_hours % 60
         
-        aggregated_data[personnel_id]['employee_id'] = personnel_id
-        aggregated_data[personnel_id]['employee_name'] = employee_name
-        aggregated_data[personnel_id]['division'] = employee_division
-        aggregated_data[personnel_id]['cctv_areas'].add(camera_name)
-        aggregated_data[personnel_id]['date'] = entry.datetime.date() # Ambil hanya tanggal dari datetime
+        # Kumpulkan semua area CCTV terkait dengan entri timer terakhir ini
+        # Jika satu karyawan punya timer terakhir yang sama dari beberapa kamera (jarang terjadi jika ada datetime DESC),
+        # query di atas akan memilih salah satunya. Untuk mengambil semua area CCTV dari semua entri karyawan
+        # pada hari itu, kita perlu query tambahan atau modifikasi query yang lebih kompleks.
+        # Untuk kesederhanaan, kita ambil camera_name dari entri timer terakhir ini.
+        cctv_area_for_this_entry = entry_dict.get('camera_name', 'N/A')
 
-    # Siapkan data untuk rendering
-    report_data = []
-    for data in aggregated_data.values():
-        total_seconds = int(data['total_time_detected'].total_seconds())
-        total_hours = total_seconds // 3600
-        total_minutes = (total_seconds % 3600) // 60
-        # total_seconds_remaining = total_seconds % 60 # Jika ingin detik juga
-
-        report_data.append({
-            'employee_id': data['employee_id'],
-            'employee_name': data['employee_name'],
-            'division': data['division'],
+        report_data_final.append({
+            # Gunakan ID internal personnel atau NIP jika ada di query
+            'employee_id': entry_dict.get('employee_internal_id', 'N/A'), 
+            'employee_name': entry_dict.get('employee_name', 'N/A'),
+            'division': entry_dict.get('employee_division', 'N/A'),
             'total_time_hours': total_hours,
             'total_time_minutes': total_minutes,
-            'cctv_areas': ', '.join(sorted(list(data['cctv_areas']))), # Join dan sort untuk konsistensi
-            'date': data['date'].isoformat(), # Format tanggal ke string standar ISO
-        }) 
-    
-    # Sort report_data by employee name for consistent display
-    report_data = sorted(report_data, key=lambda x: x['employee_name'])
+            'total_time_seconds': final_seconds,
+            'cctv_areas': cctv_area_for_this_entry, # Hanya dari entri timer terakhir
+            'date': entry_dict.get('entry_datetime').date() if entry_dict.get('entry_datetime') else filter_date_obj,
+        })
+        
+    # Urutkan jika belum diurutkan oleh query (query sudah ada ORDER BY employee_name)
+    # report_data_final.sort(key=lambda x: (x['employee_name'] if x['employee_name'] else ""))
 
-    return render_template('admin_panel/work_time_report.html', {
-        'personnel_list': personnel_list,
-        'work_time_report': report_data,
-        'filter_date': filter_date.isoformat(), # Kirim tanggal filter dalam format string ISO
-    })
-    
+    return render_template('admin_panel/work_time_report.html', 
+                           personnel_list=personnel_list,
+                           work_time_report=report_data_final,
+                           filter_date=filter_date_str, 
+                           filter_personnel_id=int(filter_personnel_id_str) if filter_personnel_id_str and filter_personnel_id_str.isdigit() else None
+                           )
     
 @bp.route('/tracking_report')
 @login_required
 @admin_required
 def tracking_report():
-    company = Company.query.filter_by(user_id=current_user).first()
+    company = Company.query.filter_by(user_id=current_user.id).first()
     if not company:
         flash("Admin account not linked to a company.", "danger")
         return redirect(url_for('auth.login'))
@@ -545,29 +572,301 @@ def presence_cam_stream():
         hasattr=hasattr, # Pastikan hasattr dikirim jika base template membutuhkannya
         now=datetime.now # Untuk cache buster di URL gambar awal
     )
-
+    
 @bp.route('/tracking-stream') # URL lebih baik menggunakan tanda hubung
 @login_required
 # @admin_required # Aktifkan jika perlu
 def tracking_cam_stream():
-    # company = current_user.company # Sesuaikan
-    
+    # Ambil company berdasarkan user yang login
     company = Company.query.filter_by(user_id=current_user.id).first()
     if not company:
-        flash("User not associated with a company.", "danger")
-        return redirect(url_for('auth.login'))
-    # Ambil semua kamera pelacak (tracking) yang aktif untuk perusahaan ini
-    # Pastikan Anda memiliki Camera_Settings.ROLE_TRACKING atau konstanta yang sesuai
-    tracking_cameras = Camera_Settings.query.filter_by(
+        flash("User tidak terasosiasi dengan perusahaan.", "danger")
+        return redirect(url_for('auth.login')) # Ganti 'auth.login' dengan rute login Anda
+
+    camera_settings_objects = Camera_Settings.query.filter_by(
         company_id=company.id, 
-        role_camera=Camera_Settings.ROLE_TRACKING,
-        cam_is_active=True # Atau tampilkan semua dan biarkan status diatur di frontend
-    )
-    
-    # Pastikan template HTML Anda bernama 'tracking_cam_stream.html'
+        role_camera=Camera_Settings.ROLE_TRACKING
+    ).all()
+
+    tracking_cameras_list = []
+    for cam_obj in camera_settings_objects:
+        tracking_cameras_list.append({
+            'id': cam_obj.id,
+            'cam_name': cam_obj.cam_name,
+            'feed_src': cam_obj.feed_src,
+            'cam_is_active': cam_obj.cam_is_active 
+        })
+
     return render_template(
         'admin_panel/tracking_cam_stream.html', 
         company=company,
-        tracking_cameras=tracking_cameras, # Kirim daftar kamera ke template
-        hasattr=hasattr 
+        tracking_cameras=tracking_cameras_list # Pastikan ini adalah list of dicts
     )
+def get_relative_image_path(absolute_path):
+    if not absolute_path:
+        return None
+    try:
+        # Ini adalah contoh, Anda HARUS menyesuaikannya dengan struktur folder Anda
+        # Asumsi UPLOAD_FOLDER adalah 'C:\Users\laila\Desktop\bismillah\coorporate_app\app\static\uploads'
+        # dan gambar ada di 'C:\Users\laila\Desktop\bismillah\coorporate_app\app\static\uploads\presence_images\20250529\img.jpg'
+        # Maka path relatifnya adalah 'presence_images/20250529/img.jpg' jika UPLOAD_FOLDER adalah basisnya.
+        # Atau jika STATIC_FOLDER adalah 'app/static' dan gambar di 'app/static/path/to/image.jpg',
+        # maka path relatif adalah 'path/to/image.jpg'
+        
+        # Cara paling aman adalah menyimpan path RELATIF terhadap folder static di database.
+        # Jika Anda menyimpan path absolut, konversinya bisa rumit dan rentan error.
+        
+        # Contoh paling sederhana jika Anda tahu base path static Anda di server:
+        # (Ganti dengan path yang benar di server Anda)
+        # static_root_on_server = os.path.normpath("C:/Users/laila/Desktop/bismillah/coorporate_app/app/static")
+        # absolute_path_norm = os.path.normpath(absolute_path)
+
+        # if absolute_path_norm.startswith(static_root_on_server):
+        #     relative_path = os.path.relpath(absolute_path_norm, static_root_on_server)
+        #     return relative_path.replace("\\", "/")
+
+        # Untuk contoh data Anda: C:\Users\laila\Desktop\bismillah\coorporate_app\ap...
+        # Ini terlihat seperti ada 'app' di pathnya. Jika folder static Anda adalah 'app/static',
+        # dan path di DB adalah C:\Users\laila\Desktop\bismillah\coorporate_app\app\static\folder\gambar.jpg
+        # maka Anda perlu mengekstrak 'folder/gambar.jpg'
+        
+        # Placeholder - Anda perlu implementasi yang benar di sini
+        # Misalkan path di DB adalah selalu setelah 'app\static\'
+        try:
+            base_path_marker = os.path.normpath("app/static/") # Sesuaikan jika perlu
+            norm_abs_path = os.path.normpath(absolute_path)
+            if base_path_marker in norm_abs_path:
+                # Ambil bagian setelah base_path_marker
+                rel_path = norm_abs_path.split(base_path_marker, 1)[1]
+                return rel_path.replace("\\", "/")
+            else:
+                # Jika tidak bisa dikonversi, kembalikan None agar template bisa menanganinya
+                current_app.logger.warn(f"Tidak bisa mengubah path gambar absolut ke relatif: {absolute_path} menggunakan marker '{base_path_marker}'")
+                return None
+        except Exception as e_path:
+            current_app.logger.error(f"Error saat memproses path gambar '{absolute_path}': {e_path}")
+            return None
+
+    except Exception as e:
+        current_app.logger.error(f"Error di get_relative_image_path: {e}")
+        return None
+
+
+def get_presences_with_raw_query(company_id_param, filter_date_param_str, filter_personnel_id_param=None):
+    current_app.logger.debug(f"MASUK get_presences_with_raw_query: company_id={company_id_param}, date='{filter_date_param_str}', personnel_id='{filter_personnel_id_param}'")
+
+    personnel_entries_table = 'personnel_entries' 
+    personnels_table = 'personnels'            
+    divisions_table = 'divisions'              
+
+    # Bangun klausa filter personel terlebih dahulu
+    personnel_filter_sql_segment = ""
+    params = {'filter_date_param': filter_date_param_str, 'company_id_param': company_id_param}
+
+    if filter_personnel_id_param and filter_personnel_id_param.isdigit():
+        personnel_filter_sql_segment = f"AND pe.personnel_id = :personnel_id_param" # Filter di CTE DailyEntries
+        params['personnel_id_param'] = int(filter_personnel_id_param)
+
+    # Masukkan filter personel ke dalam string query utama menggunakan f-string atau .format
+    # sebelum membuat objek text(). Ini lebih aman daripada .replace() pada string query yang kompleks.
+    # Pastikan personnel_filter_sql_segment aman (sudah divalidasi isdigit).
+    sql_query_str = f"""
+    WITH DailyEntries AS (
+        SELECT
+            pe.personnel_id,
+            p.name AS personnel_name,
+            p.id AS employee_internal_id,
+            pe.timestamp,
+            pe.presence_status,
+            pe.image AS entry_image_path,
+            d.name AS division_name
+        FROM
+            {personnel_entries_table} pe
+        JOIN
+            {personnels_table} p ON pe.personnel_id = p.id
+        LEFT JOIN
+            {divisions_table} d ON p.division_id = d.id
+        WHERE
+            DATE(pe.timestamp) = :filter_date_param
+            AND p.company_id = :company_id_param
+            {personnel_filter_sql_segment} -- Placeholder sudah diganti di sini
+    ),
+    AggregatedPersonnelData AS (
+        SELECT
+            de.personnel_id,
+            de.personnel_name,
+            de.employee_internal_id,
+            de.division_name,
+            MIN(CASE WHEN de.presence_status IN ('ONTIME', 'LATE') THEN de.timestamp END) AS first_in_time,
+            MAX(CASE WHEN de.presence_status = 'LEAVE' THEN de.timestamp END) AS last_out_time,
+            (SELECT sub_img.image
+             FROM {personnel_entries_table} sub_img
+             WHERE sub_img.personnel_id = de.personnel_id AND DATE(sub_img.timestamp) = :filter_date_param
+             AND sub_img.presence_status IN ('ONTIME', 'LATE')
+             ORDER BY sub_img.timestamp ASC LIMIT 1) AS attendance_image,
+            (SELECT sub_img_leave.image
+             FROM {personnel_entries_table} sub_img_leave
+             WHERE sub_img_leave.personnel_id = de.personnel_id AND DATE(sub_img_leave.timestamp) = :filter_date_param
+             AND sub_img_leave.presence_status = 'LEAVE'
+             ORDER BY sub_img_leave.timestamp DESC LIMIT 1) AS leaving_image,
+            (SELECT first_entry.presence_status -- Subquery untuk status check-in pertama
+             FROM {personnel_entries_table} first_entry
+             WHERE first_entry.personnel_id = de.personnel_id 
+             AND first_entry.timestamp = (
+                 SELECT MIN(de_sub.timestamp) 
+                 FROM DailyEntries de_sub -- Referensi ke CTE DailyEntries di sini mungkin tidak diizinkan di semua DB dalam subquery seperti ini
+                                          -- Akan lebih baik jika ini juga diambil dari DailyEntries atau subquery terpisah ke personnel_entries
+                 WHERE de_sub.personnel_id = de.personnel_id 
+                 AND de_sub.presence_status IN ('ONTIME', 'LATE')
+                 -- Pastikan filter tanggal juga ada di subquery ini jika merujuk ke DailyEntries,
+                 -- atau jika merujuk langsung ke personnel_entries, tambahkan filter tanggal.
+                 -- Untuk amannya, kita referensikan langsung ke personnel_entries dengan filter tanggal
+                 -- AND DATE(de_sub.timestamp) = :filter_date_param
+             ) 
+             -- Jika subquery di atas merujuk ke DailyEntries, mungkin perlu perbaikan.
+             -- Mari kita coba referensi ke personnel_entries langsung untuk status ini.
+             LIMIT 1 
+            ) AS first_check_in_status_val_dummy, -- Ini akan diperbaiki
+            (SELECT last_entry.presence_status
+             FROM {personnel_entries_table} last_entry
+             WHERE last_entry.personnel_id = de.personnel_id AND DATE(last_entry.timestamp) = :filter_date_param
+             ORDER BY last_entry.timestamp DESC LIMIT 1
+            ) AS overall_last_status_val
+        FROM
+            DailyEntries de
+        GROUP BY
+            de.personnel_id, de.personnel_name, de.employee_internal_id, de.division_name
+    )
+    SELECT
+        apd.*,
+        (SELECT first_entry.presence_status -- Subquery yang diperbaiki untuk status check-in pertama
+         FROM {personnel_entries_table} first_entry
+         WHERE first_entry.personnel_id = apd.personnel_id 
+         AND first_entry.timestamp = apd.first_in_time -- Gunakan first_in_time yang sudah diagregasi
+         LIMIT 1
+        ) AS first_check_in_status_val,
+        CASE
+            WHEN apd.first_in_time IS NOT NULL AND apd.last_out_time IS NOT NULL AND apd.last_out_time > apd.first_in_time
+            THEN TIMESTAMPDIFF(SECOND, apd.first_in_time, apd.last_out_time)
+            ELSE 0
+        END AS total_work_seconds,
+        CASE 
+            WHEN apd.last_out_time IS NULL AND apd.first_in_time IS NOT NULL THEN 'Masih Bekerja'
+            WHEN apd.first_in_time IS NULL THEN 
+                (SELECT CASE WHEN COUNT(*) > 0 THEN 'Tidak Ada Check-in Valid (Hanya UNKNOWN)' ELSE 'Tidak Hadir' END 
+                 FROM {personnel_entries_table} pe_check -- Cek langsung ke tabel asli
+                 WHERE pe_check.personnel_id = apd.personnel_id AND DATE(pe_check.timestamp) = :filter_date_param)
+            ELSE 
+                CASE 
+                    WHEN TIMESTAMPDIFF(SECOND, apd.first_in_time, apd.last_out_time) > (8 * 3600) THEN 'Lembur'
+                    WHEN TIMESTAMPDIFF(SECOND, apd.first_in_time, apd.last_out_time) < (7 * 3600) AND apd.last_out_time IS NOT NULL THEN 'Kurang Jam'
+                    ELSE 'Standar'
+                END
+        END AS work_notes_calculated
+    FROM AggregatedPersonnelData apd
+    ORDER BY apd.personnel_name;
+    """
+    
+    current_app.logger.debug(f"Final SQL Query for Presence:\n{sql_query_str}")
+    current_app.logger.debug(f"Params for Presence Query: {params}")
+
+    try:
+        result = db.session.execute(text(sql_query_str), params) # Gunakan sql_query_str yang sudah diformat
+        entries_raw = result.mappings().all()
+        current_app.logger.debug(f"Raw DB Result ({len(entries_raw)} entries): {entries_raw}")
+
+        formatted_presences = []
+        for entry in entries_raw:
+            work_hours_total_seconds = entry.get('total_work_seconds', 0) if entry.get('total_work_seconds') is not None else 0
+            
+            work_h = work_hours_total_seconds // 3600
+            work_m = (work_hours_total_seconds % 3600) // 60
+            
+            status_display = entry.get('first_check_in_status_val') 
+            notes_val = entry.get('work_notes_calculated', '-')
+
+            if entry.get('overall_last_status_val') == 'LEAVE' and entry.get('last_out_time'):
+                status_display = 'PULANG'
+            elif notes_val == 'Masih Bekerja':
+                status_display = entry.get('first_check_in_status_val') if entry.get('first_check_in_status_val') else 'MASUK'
+            elif notes_val == 'Tidak Hadir' or notes_val == 'Tidak Ada Check-in Valid (Hanya UNKNOWN)':
+                 status_display = 'TIDAK HADIR'
+            elif entry.get('first_check_in_status_val'):
+                status_display = entry.get('first_check_in_status_val')
+            else: 
+                status_display = entry.get('overall_last_status_val', 'N/A')
+
+
+            attendance_img_rel_path = get_relative_image_path(entry.get('attendance_image'))
+            leaving_img_rel_path = get_relative_image_path(entry.get('leaving_image'))
+
+            overtime_hours_str_val = "-"
+            if work_hours_total_seconds > (8 * 3600):
+                overtime_seconds = work_hours_total_seconds - (8 * 3600)
+                ot_h = overtime_seconds // 3600
+                ot_m = (overtime_seconds % 3600) // 60
+                overtime_hours_str_val = f"{ot_h}j {ot_m}m"
+
+            formatted_presences.append({
+                'personnel_id': entry.get('employee_internal_id'),
+                'name': entry.get('personnel_name'),
+                'attended_time': entry.get('first_in_time'), 
+                'attendance_image_path': attendance_img_rel_path,
+                'status': status_display,
+                'leave_time': entry.get('last_out_time'), 
+                'leaving_image_path': leaving_img_rel_path,
+                'work_hours_str': f"{work_h}j {work_m}m" if entry.get('first_in_time') and entry.get('last_out_time') else ("-" if not entry.get('first_in_time') else "Belum Pulang"),
+                'overtime_hours_str': overtime_hours_str_val if entry.get('first_in_time') and entry.get('last_out_time') else "-",
+                'notes': notes_val
+            })
+        
+        current_app.logger.debug(f"Formatted presences untuk dikirim ke template ({len(formatted_presences)}): {formatted_presences}")
+        return formatted_presences
+
+    except Exception as e:
+        current_app.logger.error(f"Error executing raw query or processing presences: {e}", exc_info=True)
+        current_app.logger.error(f"Query yang dieksekusi: {sql_query_str}") # Log query yang sudah diformat
+        current_app.logger.error(f"Parameter: {params}")
+        flash(f"Terjadi kesalahan Internal Server saat mengambil data absensi.", "danger")
+        return []
+
+# Fungsi view utama tetap sama, hanya memanggil get_presences_with_raw_query
+@bp.route('/presence-report', methods=['GET'])
+@login_required
+# @role_required('admin') 
+def presence_view():
+    company = Company.query.filter_by(user_id=current_user.id).first()
+    if not company:
+        flash("User tidak terasosiasi dengan perusahaan.", "danger")
+        return redirect(url_for('auth.login'))
+
+    personnel_list_for_dropdown = Personnels.query.filter_by(company_id=company.id).order_by(Personnels.name).all()
+    filter_date_str = request.args.get('filter_date', date.today().strftime('%Y-%m-%d'))
+    filter_personnel_id = request.args.get('filter_personnel_id')
+    
+    presence_data_report = get_presences_with_raw_query(company.id, filter_date_str, filter_personnel_id)
+    current_app.logger.debug(f"Data yang akan dirender di template (presence_data_report): {presence_data_report}")
+
+    return render_template(
+        'admin_panel/presence.html', 
+        personnel_list_for_dropdown=personnel_list_for_dropdown,
+        presence_data_report=presence_data_report,
+        filter_date_str=filter_date_str,
+        filter_personnel_id=filter_personnel_id,
+        today_date_str=date.today().strftime('%Y-%m-%d'),
+        company=company
+    )
+
+# Endpoint untuk download Excel (perlu diimplementasikan)
+@bp.route('/presence-report/download', methods=['GET']) # Saya ubah ke GET agar lebih mudah dipanggil dari JS
+@login_required
+# @role_required('admin')
+def download_presence_excel():
+    # Ambil filter_date dan personnel_id dari request.args
+    # Query data yang sama seperti di presence_view
+    # Generate file Excel (misalnya menggunakan Pandas dan OpenPyXL)
+    # Kirim file menggunakan send_file atau buat Response dengan data file
+    flash("Fungsi export belum diimplementasikan.", "info")
+    return redirect(url_for('admin_bp.presence_view', 
+                            filter_date=request.args.get('date'), 
+                            filter_personnel_id=request.args.get('personnel_id')))

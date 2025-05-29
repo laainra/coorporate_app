@@ -315,75 +315,83 @@ def add_tracking_camera():
 @login_required
 @admin_required
 def edit_tracking_camera(cam_id):
-    camera = Camera_Settings.query_get_or_404(cam_id) # Your actual query
-    # Ensure company_obj and company_linked are actual attributes/relationships
+    camera = Camera_Settings.query.get_or_404(cam_id)
+
+    # Asumsi company_obj dan company_linked adalah atribut/relasi yang valid
+    # Sesuaikan .id jika perlu
     if not hasattr(camera, 'company_obj') or not hasattr(current_user, 'company_linked') or \
-       camera.company_obj.id != current_user.company_linked.id: # Adjust .id if necessary
-        flash("Unauthorized access to camera settings.", "danger")
-        return redirect(url_for('admin.tracking_cam')) # Adjust to your camera list route
+       camera.company_obj.id != current_user.company_linked.id:
+        if request.method == 'POST':
+            return jsonify({'status': 'error', 'message': 'Unauthorized access to camera settings.'}), 403
+        else:
+            flash("Unauthorized access to camera settings.", "danger")
+            return redirect(url_for('admin.tracking_cam')) # Sesuaikan dengan route daftar kamera Anda
 
     if camera.role_camera != Camera_Settings.ROLE_TRACKING:
-        flash("This is not a tracking camera.", "warning")
-        return redirect(url_for('admin.tracking_cam')) # Adjust
+        if request.method == 'POST':
+            return jsonify({'status': 'error', 'message': 'This is not a tracking camera.'}), 400
+        else:
+            flash("This is not a tracking camera.", "warning")
+            return redirect(url_for('admin.tracking_cam')) # Sesuaikan
 
     if request.method == 'POST':
+        # Kumpulkan error validasi
+        error_messages = []
+
         camera.cam_name = request.form.get('cam_name', camera.cam_name)
+        camera.feed_src = request.form.get('feed_src', camera.feed_src)
         camera.uniform_detection = request.form.get('uniform_detection') == 'on'
         camera.id_card_detection = request.form.get('id_card_detection') == 'on'
         camera.shoes_detection = request.form.get('shoes_detection') == 'on'
         camera.ciggerate_detection = request.form.get('ciggerate_detection') == 'on'
         camera.sit_detection = request.form.get('sit_detection') == 'on'
-        camera.cam_is_active = request.form.get('cam_is_active') == 'on'
+        # camera.cam_is_active = request.form.get('cam_is_active') == 'on'
 
-        new_camera_type = request.form.get('camera_type')
-        new_feed_src_rtsp = request.form.get('feed_src_rtsp')
-        new_feed_src_to_store = None
-        valid_source_info = True
+        # new_camera_type = request.form.get('camera_type')
+        # new_feed_src_rtsp = request.form.get('feed_src_rtsp')
+        # new_feed_src_to_store = camera.feed_src # Default ke nilai lama jika tidak ada perubahan
 
-        if not new_camera_type:
-            flash('Camera type is required.', 'danger')
-            valid_source_info = False
-        elif new_camera_type == 'webcam':
-            new_feed_src_to_store = '0'
-        elif new_camera_type == 'cctv':
-            if not new_feed_src_rtsp:
-                flash('RTSP URL is required for CCTV type.', 'danger')
-                valid_source_info = False
-            else:
-                new_feed_src_to_store = new_feed_src_rtsp
-        else:
-            flash('Invalid camera type selected.', 'danger')
-            valid_source_info = False
+        # if not new_camera_type:
+        #     error_messages.append('Camera type is required.')
+        # elif new_camera_type == 'webcam':
+        #     new_feed_src_to_store = '0'
+        # elif new_camera_type == 'cctv':
+        #     if not new_feed_src_rtsp:
+        #         error_messages.append('RTSP URL is required for CCTV type.')
+        #     else:
+        #         new_feed_src_to_store = new_feed_src_rtsp
+        # else:
+        #     error_messages.append('Invalid camera type selected.')
         
-        if not valid_source_info:
-            # Pass current type and RTSP value back to prefill form on error
-            current_camera_type = 'webcam' if camera.feed_src == '0' else 'cctv'
-            current_feed_src_rtsp = camera.feed_src if current_camera_type == 'cctv' else ''
-            return render_template('admin_panel/edit_tracking_camera.html', 
-                                   Active_Cam=camera, 
-                                   form_data=request.form,
-                                   current_camera_type=current_camera_type,
-                                   current_feed_src_rtsp=current_feed_src_rtsp)
+        # if error_messages:
+        #     return jsonify({'status': 'error', 'message': " ".join(error_messages)}), 400
 
-        if camera.feed_src != new_feed_src_to_store:
-            if camera.feed_src: # If there was an old feed source
-                release_camera_instance(camera.feed_src) 
-            camera.feed_src = new_feed_src_to_store
+        # Jika ada perubahan pada feed_src, lakukan release instance lama jika perlu
+        # if camera.feed_src != new_feed_src_to_store:
+        #     if camera.feed_src: # Jika ada sumber feed lama
+        #         # Pastikan fungsi ini ada dan berfungsi dengan benar
+        #         # release_camera_instance(camera.feed_src) 
+        #         pass # Placeholder jika release_camera_instance tidak didefinisikan
+        #     camera.feed_src = new_feed_src_to_store
         
-        db.session.commit()
-        flash('Tracking camera updated successfully!', 'success')
-        return redirect(url_for('admin.tracking_cam')) # Adjust
+        try:
+            db.session.commit()
+            return jsonify({'status': 'success', 'message': 'Tracking camera updated successfully!'}), 200
+        except Exception as e:
+            db.session.rollback()
+            # Log error e
+            print(f"Error updating camera: {e}") # Untuk debugging
+            return jsonify({'status': 'error', 'message': f'Failed to update camera. {str(e)}'}), 500
     
-    # For GET request
+    # Untuk GET request (tetap seperti semula, menampilkan halaman HTML)
     current_camera_type = 'webcam' if camera.feed_src == '0' else 'cctv'
     current_feed_src_rtsp = camera.feed_src if current_camera_type == 'cctv' else ''
-    return render_template('admin_panel/edit_tracking_camera.html', 
+    return render_template('admin_panel/tracking_cam.html', 
                            Active_Cam=camera,
                            current_camera_type=current_camera_type,
-                           current_feed_src_rtsp=current_feed_src_rtsp)
-
-
-
+                           current_feed_src_rtsp=current_feed_src_rtsp,
+                           form_data=request.form if request.method == 'POST' else None)
+    
 @bp.route('/add_presence_camera', methods=['GET', 'POST'])
 @login_required
 @admin_required

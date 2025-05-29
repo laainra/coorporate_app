@@ -1,26 +1,25 @@
-{% extends "components/base.html" %}
+{% extends "components/base.html" %} {# Pastikan path ini benar untuk Flask Anda #}
 {% block title %}
 Work Time Report
 {% endblock %}
 
 {% block content %}
-{# {% csrf_token %} is a Django tag and is not needed here in Flask. CSRF token is handled via meta tag in base.html and JavaScript. #}
 
 <div class="content">
     <div class="container-xl">
-    <div class="header mb-4">
-            <div class="row align-items-center justify-content-between gx-4">
+        <div class="page-header d-print-none">
+            <div class="row align-items-center">
                 <div class="col-auto">
-                    <div class="page-pretitle">
-                        Reports
-                    </div>
-                    <h2 class="page-title">
-                        Work Time Report
-                    </h2>
+                    <div class="page-pretitle">Report</div>
+                    <h2 class="page-title">Work Time Report</h2>
                 </div>
-                <div class="col-auto ms-auto d-print-none">
-                    {# Tombol download akan ditambahkan di sini jika ada #}
-                    {# <a href="#" class="btn btn-primary ms-3">Download Report</a> #}
+                <div class="col-auto ms-auto d-print-none"> {# Bootstrap 5: ms-auto #}
+                    {# Tombol export ini mungkin memicu modal Bootstrap. Pastikan modalnya juga disesuaikan jika perlu. #}
+                    {# Jika menggunakan Bootstrap 5, data-toggle dan data-target menjadi data-bs-toggle dan data-bs-target #}
+                    <a href="#" class="btn btn-white" data-bs-toggle="modal" data-bs-target="#modal-export">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z"></path><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2v-2"></path><polyline points="7 11 12 16 17 11"></polyline><line x1="12" y1="4" x2="12" y2="16"></line></svg>
+                        Export
+                    </a>
                 </div>
             </div>
         </div>
@@ -28,60 +27,123 @@ Work Time Report
             <div class="col-12">
                 <div class="card">
                     <div class="card-body border-bottom py-3">
-                        <form method="get" class="d-flex" action="{{ url_for('admin.work_time_report') }}">
-                            <div class="mb-3 me-2"> {# me-2 for margin-right #}
-                                <label for="filter-date" class="form-label">Date</label>
-                                <input type="date" class="form-control form-control-sm" id="filter-date" name="filter_date" value="{{ filter_date }}" onchange="this.form.submit()">
-                            </div>
-                            <div class="mb-3 ms-auto"> {# ms-auto to push to right #}
-                                <label for="personnel-filter" class="form-label">Personnel</label>
-                                <select class="form-select form-select-sm" id="personnel-filter" name="personnel_id" onchange="this.form.submit()">
-                                    <option value="">All Personnel</option>
+                        <div class="d-flex flex-wrap mb-4 align-items-end"> {# flex-wrap untuk responsivitas #}
+                            <form method="GET" action="{{ url_for('admin.work_time_report') }}" class="d-flex align-items-end me-3"> {# Ganti dengan endpoint Flask Anda, me-3 untuk margin #}
+                                <div style="max-width: 200px;" class="me-2"> {# Bootstrap 5: me-2 #}
+                                    <label for="filter-date" class="form-label">Tanggal:</label>
+                                    {# Jika filter_date adalah objek date, str() akan menghasilkan format YYYY-MM-DD #}
+                                    {# Jika string, pastikan formatnya YYYY-MM-DD #}
+                                    <input type="date" id="filter-date" name="filter_date" class="form-control" value="{{ filter_date if filter_date else '' }}" />
+                                </div>
+                                <button type="submit" class="btn btn-primary">Filter</button>
+                            </form>
+                            <div style="max-width: 200px;" class="me-2"> {# Bootstrap 5: me-2 #}
+                                <label for="filter-personnel" class="form-label">Karyawan:</label>
+                                <select id="filter-personnel" class="form-select" onchange="filterByPersonnel()"> {# form-select untuk Bootstrap 5 #}
+                                    <option value="">Semua Karyawan</option> {# Value kosong untuk "All" #}
                                     {% for personnel in personnel_list %}
-                                    <option value="{{ personnel.id }}" {% if request.args.get('personnel_id') == personnel.id|string %}selected{% endif %}>{{ personnel.name }}</option>
+                                    {# Jika filter_personnel_id dikirim dari Flask, Anda bisa menandai yang terpilih #}
+                                    <option value="{{ personnel.id }}" {% if personnel.id == filter_personnel_id %}selected{% endif %}>
+                                        {{ personnel.name }}
+                                    </option>
                                     {% endfor %}
                                 </select>
                             </div>
-                            {# Tombol submit bisa disembunyikan jika auto-submit on change #}
-                            {# <button type="submit" class="btn btn-primary d-none">Filter</button> #}
-                        </form>
+                        </div>
+                        <div class="d-flex mb-3">
+                            <div class="text-muted">
+                                Show
+                                <div class="mx-2 d-inline-block">
+                                    <input type="text" class="form-control form-control-sm" value="{{ work_time_report | length }}" size="3" readonly> {# Menampilkan jumlah entri saat ini #}
+                                </div>
+                                entries
+                            </div>
+                            <div class="ms-auto text-muted"> {# Bootstrap 5: ms-auto #}
+                                Search:
+                                <div class="ms-2 d-inline-block"> {# Bootstrap 5: ms-2 #}
+                                    <input type="text" id="tableSearchInput" class="form-control form-control-sm" placeholder="Cari di tabel...">
+                                </div>
+                            </div>
+                        </div>
                     </div>
                     <div class="table-responsive">
-                        <table class="table card-table table-vcenter text-nowrap datatable">
+                        <table class="table card-table table-vcenter text-nowrap datatable" id="workTimeReportTable">
                             <thead>
                                 <tr>
                                     <th class="w-1">No.</th>
-                                    <th>Employee Name</th>
-                                    <th>Division</th>
-                                    <th>Date</th>
-                                    <th>Total Time (Hours:Minutes)</th>
-                                    <th>Detected Areas (CCTV)</th>
+                                    <th>Tanggal</th>
+                                    <th>ID Karyawan</th>
+                                    <th>Nama Karyawan</th>
+                                    <th>Divisi</th>
+                                    <th>Total Waktu Terdeteksi</th>
+                                    <th>Area CCTV</th>
+                                    {# <th>Detail</th> #} {# Dihilangkan karena di-comment di kode asli #}
                                 </tr>
                             </thead>
                             <tbody>
-                                {% for entry in work_time_report %}
-                                <tr>
-                                    <td>{{ loop.index }}</td>
-                                    <td>{{ entry.employee_name }}</td>
-                                    <td>{{ entry.division }}</td>
-                                    <td>{{ entry.date }}</td>
-                                    <td>{{ '%02d' | format(entry.total_time_hours) }}:{{ '%02d' | format(entry.total_time_minutes) }}</td> {# Format hours:minutes #}
-                                    <td>{{ entry.cctv_areas }}</td>
-                                </tr>
-                                {% else %} {# Jinja2's else for empty loop #}
-                                <tr>
-                                    <td colspan="6" class="text-center">No work time data found for selected date and filters.</td>
-                                </tr>
-                                {% endfor %}
+                                {% if work_time_report %}
+                                    {% for report_item in work_time_report %}
+                                    <tr>
+                                        <td>{{ loop.index }}</td>
+                                        <td>{{ report_item.date.strftime('%Y-%m-%d') if report_item.date else 'N/A' }}</td>
+                                        <td>{{ report_item.employee_id }}</td>
+                                        <td>{{ report_item.employee_name }}</td>
+                                        <td>{{ report_item.division }}</td>
+                                        <td>
+                                            {% if report_item.total_time_hours == 0 and report_item.total_time_minutes == 0 and report_item.total_time_seconds > 0 %}
+                                                {{ report_item.total_time_seconds }} Detik {# Tampilkan detik jika hanya detik #}
+                                            {% elif report_item.total_time_hours == 0 %}
+                                                {{ report_item.total_time_minutes }} Menit {{ report_item.total_time_seconds }} Detik
+                                            {% else %}
+                                                {{ report_item.total_time_hours }} Jam {{ report_item.total_time_minutes }} Menit {{ report_item.total_time_seconds }} Detik
+                                            {% endif %}
+                                        </td>
+                                        <td>{{ report_item.cctv_areas }}</td>
+                                        {# <td><a href="{{ url_for('nama_blueprint.detail_view_function', employee_id=report_item.employee_id) }}">Detail</a></td> #}
+                                    </tr>
+                                    {% endfor %}
+                                {% else %}
+                                    <tr>
+                                        <td colspan="7" class="text-center text-muted">Tidak ada data untuk tanggal atau filter yang dipilih.</td>
+                                    </tr>
+                                {% endif %}
                             </tbody>
                         </table>
                     </div>
                     <div class="card-footer d-flex align-items-center">
-                        <p class="m-0 text-muted">Showing <span>{{ work_time_report|length }}</span> entries</p>
-                        {# Jika perlu paginasi, terapkan di sini. Untuk saat ini hanya menampilkan jumlah total #}
+                        {% if work_time_report %}
+                        <p class="m-0 text-muted">Menampilkan <span>{{ work_time_report | length }}</span> dari <span>{{ work_time_report | length }}</span> entri</p> {# Sesuaikan jika ada paginasi server-side #}
+                        {% else %}
+                        <p class="m-0 text-muted">Tidak ada entri</p>
+                        {% endif %}
+                        {# Contoh Paginasi Sederhana (jika Anda mengimplementasikannya di Flask) #}
+                        {# 
                         <ul class="pagination m-0 ms-auto">
-                            {# Pagination links #}
+                            {% if pagination.has_prev %}
+                                <li class="page-item"><a class="page-link" href="{{ url_for(request.endpoint, page=pagination.prev_num, filter_date=filter_date, filter_personnel_id=filter_personnel_id) }}">Prev</a></li>
+                            {% else %}
+                                <li class="page-item disabled"><a class="page-link" href="#">Prev</a></li>
+                            {% endif %}
+
+                            {% for page_num in pagination.iter_pages() %}
+                                {% if page_num %}
+                                    {% if page_num != pagination.page %}
+                                        <li class="page-item"><a class="page-link" href="{{ url_for(request.endpoint, page=page_num, filter_date=filter_date, filter_personnel_id=filter_personnel_id) }}">{{ page_num }}</a></li>
+                                    {% else %}
+                                        <li class="page-item active"><a class="page-link" href="#">{{ page_num }}</a></li>
+                                    {% endif %}
+                                {% else %}
+                                    <li class="page-item disabled"><a class="page-link" href="#">...</a></li>
+                                {% endif %}
+                            {% endfor %}
+
+                            {% if pagination.has_next %}
+                                <li class="page-item"><a class="page-link" href="{{ url_for(request.endpoint, page=pagination.next_num, filter_date=filter_date, filter_personnel_id=filter_personnel_id) }}">Next</a></li>
+                            {% else %}
+                                <li class="page-item disabled"><a class="page-link" href="#">Next</a></li>
+                            {% endif %}
                         </ul>
+                        #}
                     </div>
                 </div>
             </div>
@@ -89,4 +151,108 @@ Work Time Report
     </div>
 </div>
 
+{# Modal untuk Export (Pastikan ID #modal-export sesuai) #}
+<div class="modal fade" id="modal-export" tabindex="-1" role="dialog" aria-labelledby="exportModalLabel" aria-hidden="true">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="exportModalLabel">Export Laporan</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button> {# Bootstrap 5 close button #}
+            </div>
+            <div class="modal-body">
+                <p>Pilih format export:</p>
+                {# Ganti action dengan endpoint export Anda #}
+                <form method="POST"> 
+                    {# Jika menggunakan Flask-WTF, tambahkan {{ form_export.csrf_token }} di sini #}
+                    <input type="hidden" name="export_filter_date" id="export_filter_date_input" value="{{ filter_date if filter_date else '' }}">
+                    <input type="hidden" name="export_filter_personnel_id" id="export_filter_personnel_id_input" value="{{ filter_personnel_id if filter_personnel_id else '' }}">
+                    
+                    <div class="mb-3">
+                        <select name="format" class="form-select">
+                            <option value="csv">CSV</option>
+                            <option value="excel">Excel (XLSX)</option>
+                            {# <option value="pdf">PDF</option> #}
+                        </select>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Export Data</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    // Fungsi untuk filter berdasarkan personel via reload halaman
+    window.filterByPersonnel = function() {
+        const personnelId = document.getElementById('filter-personnel').value;
+        const filterDate = document.getElementById('filter-date').value;
+        
+        // Buat URL baru dengan parameter filter
+        // Ganti 'nama_blueprint.work_time_report_view' dengan endpoint Anda
+        const baseUrl = "{{ url_for('nama_blueprint.work_time_report_view') }}"; 
+        let newUrl = baseUrl;
+        const params = [];
+
+        if (filterDate) {
+            params.push(`filter_date=${encodeURIComponent(filterDate)}`);
+        }
+        if (personnelId) {
+            params.push(`filter_personnel_id=${encodeURIComponent(personnelId)}`);
+        }
+        
+        if (params.length > 0) {
+            newUrl += `?${params.join('&')}`;
+        }
+        
+        window.location.href = newUrl;
+    }
+
+    // Fungsi untuk search di tabel sisi klien (sederhana)
+    const searchInput = document.getElementById('tableSearchInput');
+    const table = document.getElementById('workTimeReportTable');
+    if (searchInput && table) {
+        searchInput.addEventListener('keyup', function() {
+            const filter = searchInput.value.toLowerCase();
+            const rows = table.getElementsByTagName('tbody')[0].getElementsByTagName('tr');
+            for (let i = 0; i < rows.length; i++) {
+                let visible = false;
+                const cells = rows[i].getElementsByTagName('td');
+                for (let j = 0; j < cells.length; j++) {
+                    if (cells[j]) {
+                        if (cells[j].textContent.toLowerCase().indexOf(filter) > -1) {
+                            visible = true;
+                            break;
+                        }
+                    }
+                }
+                rows[i].style.display = visible ? '' : 'none';
+            }
+        });
+    }
+
+    // Update hidden input di modal export saat filter berubah
+    const filterDateInput = document.getElementById('filter-date');
+    const filterPersonnelSelect = document.getElementById('filter-personnel');
+    const exportFilterDateInput = document.getElementById('export_filter_date_input');
+    const exportFilterPersonnelIdInput = document.getElementById('export_filter_personnel_id_input');
+
+    function updateExportModalFilters() {
+        if (exportFilterDateInput && filterDateInput) {
+            exportFilterDateInput.value = filterDateInput.value;
+        }
+        if (exportFilterPersonnelIdInput && filterPersonnelSelect) {
+            exportFilterPersonnelIdInput.value = filterPersonnelSelect.value;
+        }
+    }
+
+    if (filterDateInput) filterDateInput.addEventListener('change', updateExportModalFilters);
+    if (filterPersonnelSelect) filterPersonnelSelect.addEventListener('change', updateExportModalFilters);
+    // Panggil sekali saat load untuk mengisi nilai awal di modal
+    updateExportModalFilters();
+
+});
+</script>
 {% endblock %}

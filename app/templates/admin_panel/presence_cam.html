@@ -67,7 +67,7 @@ Presence Camera
                                     <tr data-cam-id="{{ cam.id }}" data-cam-name="{{ cam.cam_name | lower }}">
                                         <td>{{ loop.index }}</td>
                                         <td>{{ cam.cam_name }}</td>
-                                        <td>
+                                        <td class="text-center">
                                             {% if cam.feed_src == '0' %}
                                                 <span class="badge bg-success">Webcam</span>
                                           {% elif cam.feed_src and cam.feed_src.startswith('rtsp://') %}
@@ -78,7 +78,8 @@ Presence Camera
                                             {% else %}
                                                 <span class="badge bg-secondary">Unknown</span>
                                             {% endif %}
-                                        
+                                             </br>
+                                        {{cam.feed_src }}
                               
                                         </td>
 {# Baris 1: attendance_time_start #}

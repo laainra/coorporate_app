@@ -68,14 +68,19 @@ Tracking Camera
                                 <tr data-cam-id="{{ cam.id }}" data-cam-name="{{ cam.cam_name | lower }}">
                                     <td>{{ loop.index }}</td>
                                     <td>{{ cam.cam_name }}</td>
-                                    <td>
-                                        {% if cam.feed_src == '0' %}
-                                            Webcam (Index 0)
-                                        {% elif cam.feed_src and (cam.feed_src.startswith('rtsp://') or cam.feed_src.startswith('http://') or cam.feed_src.startswith('https://')) %}
-                                            {{ cam.feed_src }} (CCTV)
-                                        {% else %}
-                                            {{ cam.feed_src }} (Unknown)
-                                        {% endif %}
+                                     <td class="text-center">
+                                            {% if cam.feed_src == '0' %}
+                                                <span class="badge bg-success">Webcam</span>
+                                          {% elif cam.feed_src and cam.feed_src.startswith('rtsp://') %}
+                                                <span class="badge bg-info">RTSP (CCTV)</span>
+                                            {% elif cam.feed_src and cam.feed_src.startswith('http://') or cam.feed_src.startswith('https://') %}
+                                                <span class="badge bg-warning">HTTP Stream</span>
+                                      
+                                            {% else %}
+                                                <span class="badge bg-secondary">Unknown</span>
+                                            {% endif %}
+                                    </br>
+                                        {{cam.feed_src }}
                                     </td>
                                     <td>
                                         {% if cam.cam_is_active %}
@@ -475,8 +480,8 @@ Tracking Camera
         .then(data => {
             if (data.status === 'success') {
                 Swal.fire({ title: 'Success!', text: data.message, icon: 'success' }).then(() => {
-                    closeModal('modal-edit');
                     location.reload();
+                    closeModal('modal-edit');
                 });
             } else {
                 Swal.fire({ title: 'Error!', html: data.message || 'Failed to update camera.', icon: 'error' });

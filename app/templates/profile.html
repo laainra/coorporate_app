@@ -1,81 +1,72 @@
-<!-- filepath: /c:/Users/laila/cctv-people-counting/Website/Dashboard/templates/profile.html -->
-{% extends 'components/base.html' %}
+{% extends 'components/base.html' %} {# Asumsi Anda punya base template #}
 
-{% block title %}
-Profile
-{% endblock %}
+{% block title %}User Profile{% endblock %}
 
 {% block content %}
-<div class="content">
-    <div class="container-xl">
-        <div class="page-header">
-            <div class="row align-items-center">
-                <div class="col-auto">
-                    <!-- Page pre-title -->
-                    <div class="page-pretitle">
-                        Setting
-                    </div>
-                    <h2 class="page-title">
-                        Profile
-                    </h2>
-                </div>
-            </div>
-        </div>
-        <div class="row row-deck row-cards">
-            <div class="col-lg-4">
-                <div class="card">
-                    <div class="card-body">
-                        <div id="profile-info">
-                            <div class="mb-2">
-                                <label class="form-label">Name</label>
-                                <input type="text" class="form-control" value="{{ name }}" readonly>
-                            </div>
-                            <div class="mb-2">
-                                <label class="form-label">Email</label>
-                                <input type="email" class="form-control" value="{{ user.email }}" readonly>
-                            </div>
-                            <div class="mb-2">
-                                <label class="form-label">Username</label>
-                                <input type="text" class="form-control" value="{{ user.username }}" readonly>
-                            </div>
-                            <button class="btn btn-primary" onclick="toggleEditForm()">Edit Profile</button>
-                        </div>
+<div class="container">
+    <h2>User Profile</h2>
+    <p>Display Name: {{ display_name }}</p>
+    <p>Role: {{ user.role }}</p>
 
-                        <div id="edit-profile-form" style="display: none;">
-                            <h2>Edit Profile</h2>
-                            <form method="post">
-                                {% csrf_token %}
-                                {% if user.role == 'superadmin' %}
-                                    {{ form.as_p }}
-                                {% elif user.role == 'admin' %}
-                                {{ form.1.as_p }}
-                                    {{ form.0.as_p }}
-                                {% elif user.role == 'employee' %}
-                                {{ form.1.as_p }}
-                                    {{ form.0.as_p }}
-                                {% endif %}
-                                <button type="submit" class="btn btn-primary">Save Changes</button>
-                                <button type="button" class="btn btn-secondary" onclick="toggleEditForm()">Cancel</button>
-                            </form>
-                        </div>
-                    </div>
-                </div>
-            </div>
+    {# Tampilkan pesan flash #}
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="alert alert-{{ category }}">{{ message }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <form method="POST" action="{{ url_for('settings.profile') }}"> {# Sesuaikan nama route #}
+        {# Common Fields #}
+        <div class="mb-3">
+            <label for="username" class="form-label">Username</label>
+            <input type="text" class="form-control" id="username" name="username" 
+                   value="{{ form_data.get('username') if form_data else user.username }}">
         </div>
-    </div>
+        <div class="mb-3">
+            <label for="email" class="form-label">Email</label>
+            <input type="email" class="form-control" id="email" name="email"
+                   value="{{ form_data.get('email') if form_data else user.email }}">
+        </div>
+
+        <hr>
+        <h4>Change Password (leave all password fields blank if not changing)</h4>
+        <div class="mb-3">
+            <label for="old_password" class="form-label">Old Password</label>
+            {# PERUBAHAN DI SINI: tambahkan atribut value untuk old_password #}
+            <input type="password" class="form-control" id="old_password" name="old_password"
+                   value="{{ form_data.get('old_password') if form_data else '' }}">
+        </div>
+        <div class="mb-3">
+            <label for="new_password" class="form-label">New Password</label>
+            <input type="password" class="form-control" id="new_password" name="new_password">
+        </div>
+        <div class="mb-3">
+            <label for="confirm_password" class="form-label">Confirm New Password</label>
+            <input type="password" class="form-control" id="confirm_password" name="confirm_password">
+        </div>
+        <hr>
+
+        {# Role-Specific Fields #}
+        {% if user.role == 'admin' and company %}
+        <div class="mb-3">
+            <label for="company_name" class="form-label">Company Name</label>
+            <input type="text" class="form-control" id="company_name" name="company_name"
+                   value="{{ form_data.get('company_name') if form_data else company.name }}">
+        </div>
+        {% endif %}
+
+        {% if user.role == 'employee' and personnel %}
+        <div class="mb-3">
+            <label for="personnel_name" class="form-label">Your Name (Personnel)</label>
+            <input type="text" class="form-control" id="personnel_name" name="personnel_name"
+                   value="{{ form_data.get('personnel_name') if form_data else personnel.name }}">
+        </div>
+        {# Tambahkan field lain untuk employee jika perlu #}
+        {% endif %}
+
+        <button type="submit" class="btn btn-primary">Update Profile</button>
+    </form>
 </div>
-
-<script>
-    function toggleEditForm() {
-        var profileInfo = document.getElementById('profile-info');
-        var editProfileForm = document.getElementById('edit-profile-form');
-        if (profileInfo.style.display === 'none') {
-            profileInfo.style.display = 'block';
-            editProfileForm.style.display = 'none';
-        } else {
-            profileInfo.style.display = 'none';
-            editProfileForm.style.display = 'block';
-        }
-    }
-</script>
 {% endblock %}

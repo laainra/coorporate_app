@@ -1,68 +1,118 @@
-{% extends "components/base.html" %} {# Assuming 'components' is a subfolder in your 'templates' directory #}
-{% block title %}
-Tracking Stream
-{% endblock %}
+{% extends "components/base.html" %}
+{% block title %}Tracking Stream{% endblock %}
 
 {% block content %}
-\
 <div class="content">
-    <div class="container-xl">
-        <div class="header mb-4">
-            <div class="row align-items-center justify-content-between gx-4">
-                <div class="col-auto">
-                    <div class="page-pretitle">
-                        {{ company.name }}'s {# Make sure 'company' object is passed to the template #}
-                    </div>
-                    <h2 class="page-title">
-                        Tracking Stream
-                    </h2>
-                </div>
-            </div>
+  <div class="container-xl">
+    <div class="header mb-4">
+      <div class="row align-items-center justify-content-between gx-4">
+        <div class="col-auto">
+          <div class="page-pretitle">{{ company.name }}'s</div>
+          <h2 class="page-title">Tracking Stream</h2>
         </div>
-        <div class="card">
-            <div class="col-12">
-                <div class="card">
-                    <div class="card-body">
-                        <div class="row">
-                            {% for cam in tracking_cameras %} {# Make sure 'tracking_cameras' list is passed #}
-                            <div class="col-md-6">
-                                <div class="card mb-3 text-center">
-                                    <div class="card-body">
-                                        <div class="d-flex justify-content-center align-items-center mb-2">
-                                            <h5 class="card-title mb-0 me-2">{{ cam.cam_name }}</h5>
-                                            {% if cam.cam_is_active %}
-                                                <span id="status_badge_{{ cam.id }}" class="badge bg-success">Active</span>
-                                            {% else %}
-                                                <span id="status_badge_{{ cam.id }}" class="badge bg-danger">Inactive</span>
-                                            {% endif %}
-                                        </div>
-
-                            
-                                        <div id="loader_{{ cam.id }}" class="spinner-border text-primary" role="status" style="display: none;">
-                                            <span class="visually-hidden">Loading...</span> {# Bootstrap 5 uses visually-hidden #}
-                                        </div>
-
-                                        <img id="img_stream_{{ cam.id }}" 
-                                             src="{{ url_for('stream.predict_video', cam_id=cam.id) }}" {# Replace 'stream_bp.video_feed' with your actual endpoint #}
-                                             style="width: 100%; border-radius: 10px; display: {% if cam.cam_is_active %}block{% else %}none{% endif %};" 
-                                             alt="Stream for {{ cam.cam_name }}" />
-                                    </div>
-                                </div>
-                            </div>
-                            {% else %} {# Jinja2's equivalent of Django's {% empty %} #}
-                            <div class="col-12">
-                                <p>No tracking cameras available.</p>
-                            </div>
-                            {% endfor %}
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
+      </div>
     </div>
+
+    <div class="card">
+      <div class="card-body">
+        <div id="stream-wrapper">
+          <!-- Container pertama -->
+          <div class="stream-block mb-4">
+            <div class="mb-3">
+              <label class="form-label">Pilih Kamera:</label>
+              <select class="form-select cameraSelect">
+                <option value="">-- Silakan Pilih Kamera --</option>
+                {% if tracking_cameras %}
+                  {% for cam in tracking_cameras %}
+                    <option value="{{ cam.id }}">{{ cam.cam_name }} (ID: {{ cam.id }} - {{ cam.feed_src }})</option>
+                  {% endfor %}
+                {% else %}
+                  <option value="" disabled>Tidak ada kamera tersedia</option>
+                {% endif %}
+              </select>
+            </div>
+            <div class="stream-container bg-dark text-center rounded position-relative" style="min-height: 300px; display: flex; align-items: center; justify-content: center;">
+              <div class="spinner-border text-light loader" role="status" style="display: none;">
+                <span class="visually-hidden">Memuat Stream...</span>
+              </div>
+              <img class="imgStream" data-stream-url-template="{{ url_for('stream.predict_video', cam_id=0).replace('0', 'CAM_ID') }}"
+                style="width: 100%; max-height: 60vh; object-fit: contain; display: none; border-radius: 0.25rem;" alt="Live Stream">
+              <div class="stream-alert-box text-white p-3"></div>
+            </div>
+          </div>
+        </div>
+
+        <button type="button" class="btn btn-primary" onclick="addNewStream()">+ Add Stream</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script>
-   
+function updateVideoStream(container) {
+  const select = container.querySelector('.cameraSelect');
+  const img = container.querySelector('.imgStream');
+  const loader = container.querySelector('.loader');
+  const alertBox = container.querySelector('.stream-alert-box');
+  const streamUrlTemplate = img.dataset.streamUrlTemplate;
+
+  const camId = select.value;
+
+  alertBox.innerHTML = '';
+
+  if (!camId) {
+    img.style.display = 'none';
+    img.src = "";
+    loader.style.display = 'none';
+    alertBox.innerHTML = '<div class="text-muted">Silakan pilih kamera untuk memulai stream.</div>';
+    return;
+  }
+
+  const newStreamUrl = streamUrlTemplate.replace('CAM_ID', camId) + `?t=${Date.now()}`;
+
+  img.style.display = 'none';
+  loader.style.display = 'block';
+  img.src = newStreamUrl;
+
+  img.onload = () => {
+    loader.style.display = 'none';
+    img.style.display = 'block';
+    alertBox.innerHTML = '';
+  };
+
+  img.onerror = () => {
+    loader.style.display = 'none';
+    img.style.display = 'none';
+    alertBox.innerHTML = `<div class="alert alert-danger">Gagal memuat stream dari kamera ID ${camId}.</div>`;
+  };
+}
+
+function addNewStream() {
+  const wrapper = document.getElementById('stream-wrapper');
+  const firstBlock = document.querySelector('.stream-block');
+  const clone = firstBlock.cloneNode(true);
+
+  // Reset stream
+  clone.querySelector('.cameraSelect').value = "";
+  clone.querySelector('.imgStream').style.display = "none";
+  clone.querySelector('.imgStream').src = "";
+  clone.querySelector('.loader').style.display = "none";
+  clone.querySelector('.stream-alert-box').innerHTML = "";
+
+  // Tambahkan event listener baru
+  clone.querySelector('.cameraSelect').addEventListener('change', function () {
+    updateVideoStream(clone);
+  });
+
+  wrapper.appendChild(clone);
+}
+
+// Initial setup for the first block
+document.addEventListener("DOMContentLoaded", function () {
+  const firstSelect = document.querySelector('.stream-block .cameraSelect');
+  firstSelect.addEventListener('change', function () {
+    updateVideoStream(document.querySelector('.stream-block'));
+  });
+});
 </script>
 {% endblock %}

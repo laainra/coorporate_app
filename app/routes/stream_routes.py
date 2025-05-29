@@ -125,54 +125,8 @@ def release_camera_instance(camera_source):
         del _camera_instance_cache[camera_source]
         print(f"Camera instance for source '{camera_source}' released.")
 
-# ====================================================================
-# Logika Pemrosesan Kehadiran/Absensi (Internal Functions)
-# ====================================================================
 
 
-# ====================================================================
-# Logika Pengambilan Absensi dari Webcam (Internal Function)
-# ====================================================================
-def capture_absence_from_webcam_logic(personnel_id, camera_id=0):
-    personnel = Personnels.query.get(personnel_id)
-    camera = Camera_Settings.query.get(camera_id)
-
-    if not personnel:
-        return {"success": False, "message": "Personnel not found."}
-    if not camera:
-        return {"success": False, "message": "Camera not found."}
-
-    cap = get_camera_instance(int(camera.feed_src) if str(camera.feed_src).isdigit() else camera.feed_src)
-    if not cap or not cap.isOpened():
-        return {"success": False, "message": "Could not open camera."}
-
-    ret, frame = cap.read()
-
-    if not ret:
-        return {"success": False, "message": "Failed to capture image from camera."}
-
-    now = datetime.now()
-    filename = f"absence_{personnel.name}_{now.strftime('%Y%m%d%H%M%S')}.jpg"
-    save_directory = os.path.join(current_app.config['UPLOAD_FOLDER'], 'extracted_faces', 'predicted_faces', 'absence', now.strftime('%Y%m%d'))
-    os.makedirs(save_directory, exist_ok=True)
-    file_path_abs = os.path.join(save_directory, filename)
-    
-    cv2.imwrite(file_path_abs, frame)
-
-    relative_path_to_upload_folder = os.path.relpath(file_path_abs, current_app.config['UPLOAD_FOLDER']).replace("\\", "/")
-
-    data_for_attendance = {
-        'name': personnel.name,
-        'datetime': now.strftime('%Y-%m-%d %H:%M:%S'),
-        'image_path': relative_path_to_upload_folder,
-        'camera_id': camera.id
-    }
-    result_status = process_attendance_entry(data_for_attendance)
-
-    if result_status == 'success':
-        return {"success": True, "message": f"Absence recorded for {personnel.name}."}
-    else:
-        return {"success": False, "message": f"Failed to record absence: {result_status}"}
 
 def get_today_presences_logic(company_id):
     today_str = date.today().strftime('%Y-%m-%d') # Format tanggal sebagai string untuk query
@@ -285,155 +239,13 @@ def get_today_presences_logic(company_id):
                 # 'leaving_image_path': entry.get('leaving_image_path'),
             })
         
-        # current_app.logger.info(f"Data absensi (raw query) untuk company_id {company_id}: {formatted_presences}")
+        # print(f"Data absensi (raw query) untuk company_id {company_id}: {formatted_presences}")
         return formatted_presences
 
     except Exception as e:
         current_app.logger.error(f"Error executing raw query in get_today_presences_logic for company_id {company_id}: {e}", exc_info=True)
         return [] # Kembalikan list kosong jika terjadi error
 
-# ====================================================================
-# Logika Streaming dengan Pengenalan Wajah (Core Generator)
-# ====================================================================
-def generate_face_recognition_frames(camera_source, cam_settings=None, model_folder_path=None):
-    global detection_times, last_detection_time, last_save_time_global
-    
-    cap = get_camera_instance(int(camera_source) if str(camera_source).isdigit() else camera_source)
-    if not cap or not cap.isOpened():
-        print(f"Error: Camera at {camera_source} could not be opened for recognition stream.")
-        dummy_frame = np.zeros((480, 640, 3), dtype=np.uint8)
-        cv2.putText(dummy_frame, "CAMERA ERROR!", (100, 240), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
-        _, jpeg = cv2.imencode('.jpg', dummy_frame)
-        yield (b'--frame\r\n'
-               b'Content-Type: image/jpeg\r\n\r\n' + jpeg.tobytes() + b'\r\n')
-        return
-
-    recognizer = cv2.face.LBPHFaceRecognizer_create()
-    model_file_path = get_model(model_folder_path)
-    if not os.path.exists(model_file_path):
-        print("Model not available, please train the model first.")
-        dummy_frame = np.zeros((480, 640, 3), dtype=np.uint8)
-        cv2.putText(dummy_frame, "MODEL NOT TRAINED!", (100, 240), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
-        _, jpeg = cv2.imencode('.jpg', dummy_frame)
-        yield (b'--frame\r\n'
-               b'Content-Type: image/jpeg\r\n\r\n' + jpeg.tobytes() + b'\r\n')
-        cap.release()
-        return
-
-    recognizer.read(model_file_path)
-    label_to_name = load_label(model_folder_path) if model_folder_path else load_label_to_name()
-
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            print(f"Failed to read frame from camera {camera_source}. Attempting to re-open.")
-            cap.release()
-            cap = get_camera_instance(int(camera_source) if str(camera_source).isdigit() else camera_source)
-            if not cap or not cap.isOpened():
-                print(f"Failed to re-open camera {camera_source}. Stopping stream.")
-                break
-            continue
-
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        faces_detected_in_frame = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5)
-        
-        if len(faces_detected_in_frame) == 0:
-            pass
-
-        for (x, y, w, h) in faces_detected_in_frame:
-            face_roi = cv2.resize(gray[y:y+h, x:x+w], (200, 200))
-            label, confidence = recognizer.predict(face_roi)
-
-            name = label_to_name.get(label, "Unknown")
-            timer_text = ""
-            display_color = (0, 0, 255)
-
-            if confidence < 70:
-                display_color = (0, 255, 0)
-                
-                if cam_settings and cam_settings.role_camera == Camera_Settings.ROLE_TRACKING and name != "Unknown":
-                    current_time = datetime.now()
-                    if name in last_detection_time:
-                        elapsed_time = (current_time - last_detection_time[name]).total_seconds()
-                        detection_times[name] += elapsed_time
-                    else:
-                        detection_times[name] = 0
-                    last_detection_time[name] = current_time
-                    
-                    total_time_recognized = int(detection_times.get(name, 0))
-                    timer_text = f'Timer: {total_time_recognized}s'
-
-                    if (current_time - last_save_time_global) >= timedelta(minutes=1):
-                        try:
-                            personnel_obj = Personnels.query.filter_by(name=name).first()
-                            if personnel_obj and cam_settings:
-                                new_work_timer = Work_Timer(
-                                    personnel_id=personnel_obj.id,
-                                    camera_id=cam_settings.id,
-                                    type=Work_Timer.TYPE_FACE_DETECTED,
-                                    datetime=datetime.utcnow(),
-                                    timer=int(detection_times[name])
-                                )
-                                db.session.add(new_work_timer)
-                                db.session.commit()
-                                print(f"Saved Work_Timer for {name}: {detection_times[name]}s")
-                            else:
-                                print(f"Skipping Work_Timer save for {name}: Personnel or Camera settings not found.")
-                        except Exception as e:
-                            db.session.rollback()
-                            print(f"Error saving Work_Timer to database: {e}")
-                        last_save_time_global = current_time
-            else:
-                name = "Unknown"
-                display_color = (0, 0, 255)
-                if name in last_detection_time:
-                    del last_detection_time[name]
-                    if name in detection_times:
-                        del detection_times[name]
-
-            cv2.rectangle(frame, (x, y), (x+w, y+h), display_color, 2)
-            cv2.putText(frame, f'{name} ({confidence:.2f}), {timer_text}', (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, display_color, 2)
-
-        ret, jpeg = cv2.imencode('.jpg', frame)
-        if not ret:
-            break
-        yield (b'--frame\r\n'
-               b'Content-Type: image/jpeg\r\n\r\n' + jpeg.tobytes() + b'\r\n')
-
-    release_camera_instance(int(camera_source) if str(camera_source).isdigit() else camera_source)
-
-# ====================================================================
-# Logika Capture Video (untuk dataset)
-# ====================================================================
-def generate_raw_video_frames(camera_source):
-    cap = get_camera_instance(int(camera_source) if str(camera_source).isdigit() else camera_source)
-    if not cap or not cap.isOpened():
-        print(f"Error: Camera at {camera_source} could not be opened for raw stream.")
-        dummy_frame = np.zeros((480, 640, 3), dtype=np.uint8)
-        cv2.putText(dummy_frame, "CAMERA ERROR!", (100, 240), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
-        _, jpeg = cv2.imencode('.jpg', dummy_frame)
-        yield (b'--frame\r\n'
-               b'Content-Type: image/jpeg\r\n\r\n' + jpeg.tobytes() + b'\r\n')
-        return
-
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            print(f"Failed to read frame from camera {camera_source}. Reattempting to open.")
-            cap.release()
-            cap = get_camera_instance(int(camera_source) if str(camera_source).isdigit() else camera_source)
-            if not cap or not cap.isOpened():
-                print(f"Failed to reopen camera {camera_source}. Stopping stream.")
-                break
-            continue
-        
-        _, jpeg = cv2.imencode('.jpg', frame)
-        if not ret:
-            break
-        yield (b'--frame\r\n'
-               b'Content-Type: image/jpeg\r\n\r\n' + jpeg.tobytes() + b'\r\n')
-    
-    release_camera_instance(int(camera_source) if str(camera_source).isdigit() else camera_source)
 
 # ====================================================================
 # Logika Pengambilan Gambar Wajah (untuk dataset)
@@ -558,92 +370,7 @@ def video_feed(cam_source):
     return Response(generate_raw_video_frames(camera_source_parsed),
                     mimetype='multipart/x-mixed-replace; boundary=frame')
 
-@bp.route('/presence_stream/<int:cam_id>')
-@login_required
-def presence_stream(cam_id):
-    """Route for presence camera stream with face recognition and attendance processing."""
-    cam_settings = Camera_Settings.query.filter_by(id=cam_id, role_camera=Camera_Settings.ROLE_PRESENCE, cam_is_active=True).first()
-    if not cam_settings:
-        return jsonify({'status': 'error', 'message': 'Presence Camera not found or not active.'}), 404
-    
-    if current_user.is_admin and cam_settings.company_obj != current_user.company_linked:
-         return jsonify({'status': 'error', 'message': 'Unauthorized camera access.'}), 403
 
-    return Response(generate_face_recognition_frames(cam_settings.feed_src, cam_settings),
-                    mimetype='multipart/x-mixed-replace; boundary=frame')
-
-@bp.route('/tracking_stream/<int:cam_id>')
-@login_required
-def tracking_stream(cam_id):
-    """Route for tracking camera stream with face recognition and time tracking."""
-    cam_settings = Camera_Settings.query.filter_by(id=cam_id, role_camera=Camera_Settings.ROLE_TRACKING, cam_is_active=True).first()
-    if not cam_settings:
-        return jsonify({'status': 'error', 'message': 'Tracking Camera not found or not active.'}), 404
-    
-    if current_user.is_admin and cam_settings.company_obj != current_user.company_linked:
-         return jsonify({'status': 'error', 'message': 'Unauthorized camera access.'}), 403
-
-    return Response(generate_face_recognition_frames(cam_settings.feed_src, cam_settings),
-                    mimetype='multipart/x-mixed-replace; boundary=frame')
-
-@bp.route('/start_stream/<cam_source>', methods=['POST'])
-@login_required
-@admin_required
-def start_stream(cam_source):
-    """Endpoint to explicitly start/re-initialize a camera stream."""
-    try:
-        camera_source_parsed = int(cam_source) if str(cam_source).isdigit() else cam_source
-    except ValueError:
-        return jsonify({'status': 'error', 'message': 'Invalid camera source format.'}), 400
-
-    cap = get_camera_instance(camera_source_parsed)
-    if cap and cap.isOpened():
-        return jsonify({'status': 'success', 'message': f'Camera {cam_source} initialized/re-initialized.'})
-    else:
-        return jsonify({'status': 'error', 'message': f'Failed to initialize camera {cam_source}.'}), 500
-
-@bp.route('/stop_stream/<cam_source>', methods=['POST'])
-@login_required
-@admin_required
-def stop_stream(cam_source):
-    """Endpoint to explicitly stop a camera stream."""
-    try:
-        camera_source_parsed = int(cam_source) if str(cam_source).isdigit() else cam_source
-    except ValueError:
-        return jsonify({'status': 'error', 'message': 'Invalid camera source format.'}), 400
-
-    release_camera_instance(camera_source_parsed)
-    return jsonify({'status': 'success', 'message': f'Camera {cam_source} stream stopped.'})
-
-
-@bp.route('/capture_absence_from_webcam', methods=['POST'])
-@login_required
-
-def capture_absence_from_webcam():
-    """Endpoint to capture an image for absence record from a webcam."""
-    personnel_id_from_request = request.form.get('personnel_id', type=int) 
-    camera_id_from_request = request.form.get('camera_id', type=int)
-
-    if not personnel_id_from_request:
-        personnel = Personnels.query.filter_by(user_account=current_user).first()
-        if personnel:
-            personnel_id_from_request = personnel.id
-        else:
-            return jsonify({'status': 'error', 'message': 'Personnel not found for current user.'}), 400
-
-    if not camera_id_from_request:
-        cam = Camera_Settings.query.filter_by(role_camera='P', cam_is_active=True).first()
-        if cam:
-            camera_id_from_request = cam.id
-        else:
-            return jsonify({'status': 'error', 'message': 'No active presence camera found for auto-capture.'}), 400
-
-    result = capture_absence_from_webcam_logic(personnel_id_from_request, camera_id_from_request)
-    
-    if result['success']:
-        return jsonify({'status': 'success', 'message': result['message']})
-    else:
-        return jsonify({'status': 'error', 'message': result['message']}), 500
 
 
 # ====================================================================
@@ -763,6 +490,152 @@ def train_model():
         flash(result['message'], 'danger')
     return redirect(url_for('stream.dataset_no_id'))
 
+# ====================================================================
+# Logika Capture Video (untuk dataset)
+# ====================================================================
+def generate_raw_video_frames(camera_source):
+    cap = get_camera_instance(int(camera_source) if str(camera_source).isdigit() else camera_source)
+    if not cap or not cap.isOpened():
+        print(f"Error: Camera at {camera_source} could not be opened for raw stream.")
+        dummy_frame = np.zeros((480, 640, 3), dtype=np.uint8)
+        cv2.putText(dummy_frame, "CAMERA ERROR!", (100, 240), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+        _, jpeg = cv2.imencode('.jpg', dummy_frame)
+        yield (b'--frame\r\n'
+               b'Content-Type: image/jpeg\r\n\r\n' + jpeg.tobytes() + b'\r\n')
+        return
+
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            print(f"Failed to read frame from camera {camera_source}. Reattempting to open.")
+            cap.release()
+            cap = get_camera_instance(int(camera_source) if str(camera_source).isdigit() else camera_source)
+            if not cap or not cap.isOpened():
+                print(f"Failed to reopen camera {camera_source}. Stopping stream.")
+                break
+            continue
+        
+        _, jpeg = cv2.imencode('.jpg', frame)
+        if not ret:
+            break
+        yield (b'--frame\r\n'
+               b'Content-Type: image/jpeg\r\n\r\n' + jpeg.tobytes() + b'\r\n')
+    
+    release_camera_instance(int(camera_source) if str(camera_source).isdigit() else camera_source)
+# ====================================================================
+# Logika Streaming dengan Pengenalan Wajah (Core Generator)
+# ====================================================================
+def generate_face_recognition_frames(camera_source, cam_settings, model_folder_path, app, db):
+    global detection_times, last_detection_time, last_save_time_global
+    
+    cap = get_camera_instance(int(camera_source) if str(camera_source).isdigit() else camera_source)
+    if not cap or not cap.isOpened():
+        print(f"Error: Camera at {camera_source} could not be opened for recognition stream.")
+        dummy_frame = np.zeros((480, 640, 3), dtype=np.uint8)
+        cv2.putText(dummy_frame, "CAMERA ERROR!", (100, 240), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+        _, jpeg = cv2.imencode('.jpg', dummy_frame)
+        yield (b'--frame\r\n'
+               b'Content-Type: image/jpeg\r\n\r\n' + jpeg.tobytes() + b'\r\n')
+        return
+
+    recognizer = cv2.face.LBPHFaceRecognizer_create()
+    model_file_path = get_model(model_folder_path)
+    if not os.path.exists(model_file_path):
+        print("Model not available, please train the model first.")
+        dummy_frame = np.zeros((480, 640, 3), dtype=np.uint8)
+        cv2.putText(dummy_frame, "MODEL NOT TRAINED!", (100, 240), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+        _, jpeg = cv2.imencode('.jpg', dummy_frame)
+        yield (b'--frame\r\n'
+               b'Content-Type: image/jpeg\r\n\r\n' + jpeg.tobytes() + b'\r\n')
+        cap.release()
+        return
+
+    recognizer.read(model_file_path)
+    label_to_name = load_label(model_folder_path) if model_folder_path else load_label_to_name()
+
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            print(f"Failed to read frame from camera {camera_source}. Attempting to re-open.")
+            cap.release()
+            cap = get_camera_instance(int(camera_source) if str(camera_source).isdigit() else camera_source)
+            if not cap or not cap.isOpened():
+                print(f"Failed to re-open camera {camera_source}. Stopping stream.")
+                break
+            continue
+
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        faces_detected_in_frame = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5)
+        
+        if len(faces_detected_in_frame) == 0:
+            pass
+
+        for (x, y, w, h) in faces_detected_in_frame:
+            face_roi = cv2.resize(gray[y:y+h, x:x+w], (200, 200))
+            label, confidence = recognizer.predict(face_roi)
+
+            name = label_to_name.get(label, "Unknown")
+            timer_text = ""
+            display_color = (0, 0, 255)
+
+            if confidence < 70:
+                display_color = (0, 255, 0)
+                
+                if cam_settings and cam_settings.role_camera == Camera_Settings.ROLE_TRACKING and name != "Unknown":
+                    current_time = datetime.now()
+                    if name in last_detection_time:
+                        elapsed_time = (current_time - last_detection_time[name]).total_seconds()
+                        detection_times[name] += elapsed_time
+                    else:
+                        detection_times[name] = 0
+                    last_detection_time[name] = current_time
+                    
+                    total_time_recognized = int(detection_times.get(name, 0))
+                    timer_text = f'Timer: {total_time_recognized}s'
+
+                    if (current_time - last_save_time_global) >= timedelta(minutes=1):
+                        try:
+                            with app.app_context():
+                                personnel_obj = db.session.query(Personnels).filter_by(name=name).first()
+                                if personnel_obj and cam_settings:
+                                    new_work_timer = Work_Timer(
+                                        personnel_id=personnel_obj.id,
+                                        camera_id=cam_settings.id,
+                                        type=Work_Timer.TYPE_FACE_DETECTED,
+                                        datetime=datetime.utcnow(),
+                                        timer=int(detection_times[name])
+                                    )
+                                    db.session.add(new_work_timer)
+                                    db.session.commit()
+                                    print(f"Saved Work_Timer for {name}: {detection_times[name]}s")
+                                else:
+                                    print(f"Skipping Work_Timer save for {name}: Personnel or Camera settings not found.")
+                        except Exception as e:
+                            with app.app_context():
+                                db.session.rollback()
+                            print(f"Error saving Work_Timer to database: {e}")
+
+
+                        last_save_time_global = current_time
+            else:
+                name = "Unknown"
+                display_color = (0, 0, 255)
+                if name in last_detection_time:
+                    del last_detection_time[name]
+                    if name in detection_times:
+                        del detection_times[name]
+
+            cv2.rectangle(frame, (x, y), (x+w, y+h), display_color, 2)
+            cv2.putText(frame, f'{name} ({confidence:.2f}), {timer_text}', (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, display_color, 2)
+
+        ret, jpeg = cv2.imencode('.jpg', frame)
+        if not ret:
+            break
+        yield (b'--frame\r\n'
+               b'Content-Type: image/jpeg\r\n\r\n' + jpeg.tobytes() + b'\r\n')
+
+    release_camera_instance(int(camera_source) if str(camera_source).isdigit() else camera_source)
+
 @bp.route('/recognize/<int:cam_id>')
 @login_required
 # Atau employee_required jika ini untuk melihat stream dengan pengenalan
@@ -787,8 +660,12 @@ def predict_video(cam_id):
                 # Ambil path model dari config dalam konteks aktif
         model_folder_path = current_app.config['TRAINED_MODELS_PATH']
 
-        return Response(generate_face_recognition_frames(camera_source_url, cam_settings, model_folder_path),
-                        mimetype='multipart/x-mixed-replace; boundary=frame')
+        app_context = current_app._get_current_object()
+
+        return Response(
+            generate_face_recognition_frames(camera_source_url, cam_settings, model_folder_path, app_context, db),
+            mimetype='multipart/x-mixed-replace; boundary=frame'
+)
         
     except Exception as e:
         print(f"Error in predict_video_stream: {e}")
@@ -883,6 +760,7 @@ def get_today_presences(): # Nama fungsi ini akan menjadi bagian dari endpoint
     company_id = Company.query.filter_by(user_id=current_user.id).first() 
     try:
         presence_data = get_today_presences_logic(company_id)
+        print(f"Presence data for company {company_id.id}: {presence_data}") # Debugging log
         return jsonify({'status': 'success', 'data': presence_data})
     except Exception as e:
         current_app.logger.error(f"Error in get_today_presences for company {company_id}: {str(e)}")
@@ -919,6 +797,34 @@ def process_attendance_entry(data):
     except Exception as e:
         current_app.logger.error(f"Error saat mengambil data personel '{name}': {e}", exc_info=True)
         return 'db_error'
+    
+    # 1.5. Validasi personel dan kamera berasal dari perusahaan yang sama
+    query_company_check = text("""
+        SELECT 
+            p.company_id AS person_company_id,
+            c.company_id AS camera_company_id
+        FROM personnels p
+        JOIN camera_settings c ON c.id = :cam_id
+        WHERE p.id = :p_id
+    """)
+
+    try:
+        result_company = db.session.execute(query_company_check, {"p_id": personnel_id, "cam_id": cam_id}).fetchone()
+        if not result_company:
+            current_app.logger.warning(f"Gagal mencocokkan company_id personel dan kamera.")
+            return 'mismatch_or_invalid'
+        
+        if result_company.person_company_id is None or result_company.camera_company_id is None:
+            current_app.logger.warning(f"company_id kosong: personel({result_company.person_company_id}), kamera({result_company.camera_company_id})")
+            return 'missing_company_id'
+        
+        if result_company.person_company_id != result_company.camera_company_id:
+            current_app.logger.info(f"Personel '{name}' tidak berasal dari company yang sama dengan kamera {cam_id}. Absensi diabaikan.")
+            return 'unauthorized_entry'
+    except Exception as e:
+        current_app.logger.error(f"Error saat validasi company_id personel dan kamera: {e}", exc_info=True)
+        return 'db_error'
+
 
     # 2. Dapatkan Pengaturan Kamera dan Jumlah Absensi yang Sudah Ada (Raw SQL)
     # Asumsi Camera_Settings.ROLE_PRESENCE adalah 'P'
@@ -997,21 +903,21 @@ def process_attendance_entry(data):
     # 6. Logika Bisnis untuk Duplikat/Status (dari fungsi asli Anda)
     if status == 'ONTIME':
         if has_ontime or has_late: # Jika sudah ONTIME atau LATE, tidak bisa ONTIME lagi
-            current_app.logger.info(f"Duplikat ONTIME/LATE untuk {name}. ONTIME tidak dicatat.")
+            print(f"Duplikat ONTIME/LATE untuk {name}. ONTIME tidak dicatat.")
             return 'already_present' 
     elif status == 'LATE':
         if has_ontime or has_late: # Jika sudah ONTIME atau LATE, tidak bisa LATE lagi
-            current_app.logger.info(f"Duplikat ONTIME/LATE untuk {name}. LATE tidak dicatat.")
+            print(f"Duplikat ONTIME/LATE untuk {name}. LATE tidak dicatat.")
             return 'already_present'
     elif status == 'LEAVE':
         if has_leave:
-            current_app.logger.info(f"Duplikat LEAVE untuk {name}. LEAVE tidak dicatat.")
+            print(f"Duplikat LEAVE untuk {name}. LEAVE tidak dicatat.")
             return 'already_present'
         if not (has_ontime or has_late):
-            current_app.logger.info(f"Tidak bisa LEAVE untuk {name} sebelum ONTIME atau LATE.")
+            print(f"Tidak bisa LEAVE untuk {name} sebelum ONTIME atau LATE.")
             return 'not_eligible_for_leave'
     elif status == 'UNKNOWN':
-        current_app.logger.info(f"Status UNKNOWN untuk {name} pada {detected_time}. Tidak ada entri yang dibuat.")
+        print(f"Status UNKNOWN untuk {name} pada {detected_time}. Tidak ada entri yang dibuat.")
         return 'ignored_unknown_status' # Status khusus untuk diabaikan
 
 
@@ -1030,7 +936,7 @@ def process_attendance_entry(data):
             "img_path": image_path # Menggunakan image_path sesuai definisi Anda
         })
         db.session.commit()
-        current_app.logger.info(f"Berhasil memasukkan entri {status} untuk {name} (ID: {personnel_id}) pada {detected_time} dari kamera {cam_id}")
+        print(f"Berhasil memasukkan entri {status} untuk {name} (ID: {personnel_id}) pada {detected_time} dari kamera {cam_id}")
         return 'success'
     except Exception as e:
         db.session.rollback()
