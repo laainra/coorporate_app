@@ -13,6 +13,55 @@ from werkzeug.utils import secure_filename # Untuk upload file
 
 bp = Blueprint('employee', __name__, template_folder='../templates/employee_panel')
 
+def get_relative_image_path(absolute_path):
+    if not absolute_path:
+        return None
+    try:
+        # Ini adalah contoh, Anda HARUS menyesuaikannya dengan struktur folder Anda
+        # Asumsi UPLOAD_FOLDER adalah 'C:\Users\laila\Desktop\bismillah\coorporate_app\app\static\uploads'
+        # dan gambar ada di 'C:\Users\laila\Desktop\bismillah\coorporate_app\app\static\uploads\presence_images\20250529\img.jpg'
+        # Maka path relatifnya adalah 'presence_images/20250529/img.jpg' jika UPLOAD_FOLDER adalah basisnya.
+        # Atau jika STATIC_FOLDER adalah 'app/static' dan gambar di 'app/static/path/to/image.jpg',
+        # maka path relatif adalah 'path/to/image.jpg'
+        
+        # Cara paling aman adalah menyimpan path RELATIF terhadap folder static di database.
+        # Jika Anda menyimpan path absolut, konversinya bisa rumit dan rentan error.
+        
+        # Contoh paling sederhana jika Anda tahu base path static Anda di server:
+        # (Ganti dengan path yang benar di server Anda)
+        # static_root_on_server = os.path.normpath("C:/Users/laila/Desktop/bismillah/coorporate_app/app/static")
+        # absolute_path_norm = os.path.normpath(absolute_path)
+
+        # if absolute_path_norm.startswith(static_root_on_server):
+        #     relative_path = os.path.relpath(absolute_path_norm, static_root_on_server)
+        #     return relative_path.replace("\\", "/")
+
+        # Untuk contoh data Anda: C:\Users\laila\Desktop\bismillah\coorporate_app\ap...
+        # Ini terlihat seperti ada 'app' di pathnya. Jika folder static Anda adalah 'app/static',
+        # dan path di DB adalah C:\Users\laila\Desktop\bismillah\coorporate_app\app\static\folder\gambar.jpg
+        # maka Anda perlu mengekstrak 'folder/gambar.jpg'
+        
+        # Placeholder - Anda perlu implementasi yang benar di sini
+        # Misalkan path di DB adalah selalu setelah 'app\static\'
+        try:
+            base_path_marker = os.path.normpath("app/static/") # Sesuaikan jika perlu
+            norm_abs_path = os.path.normpath(absolute_path)
+            if base_path_marker in norm_abs_path:
+                # Ambil bagian setelah base_path_marker
+                rel_path = norm_abs_path.split(base_path_marker, 1)[1]
+                return rel_path.replace("\\", "/")
+            else:
+                # Jika tidak bisa dikonversi, kembalikan None agar template bisa menanganinya
+                current_app.logger.warn(f"Tidak bisa mengubah path gambar absolut ke relatif: {absolute_path} menggunakan marker '{base_path_marker}'")
+                return None
+        except Exception as e_path:
+            current_app.logger.error(f"Error saat memproses path gambar '{absolute_path}': {e_path}")
+            return None
+
+    except Exception as e:
+        current_app.logger.error(f"Error di get_relative_image_path: {e}")
+        return None
+    
 
 def _get_employee_presence_data(target_date=None, personnel_id=None):
     sql = '''
@@ -93,8 +142,10 @@ def _get_employee_presence_data(target_date=None, personnel_id=None):
     for entry in entries:
         attended_time = entry.attended_time.strftime('%H:%M:%S') if entry.attended_time else '-'
         leaving_time = entry.leaving_time.strftime('%H:%M:%S') if entry.leaving_time else '-'
-        attendance_image_path = f"img/{entry.attendance_image}" if entry.attendance_image else 'img/no_image.png'
-        leaving_image_path = f"img/{entry.leaving_image}" if entry.leaving_image else 'img/no_image.png'
+
+        # Gunakan fungsi konversi path
+        attendance_image_path = get_relative_image_path(entry.attendance_image) if entry.attendance_image else 'img/no_image.png'
+        leaving_image_path = get_relative_image_path(entry.leaving_image) if entry.leaving_image else 'img/no_image.png'
 
         presence_data.append({
             'id': entry.personnel_id,
@@ -110,6 +161,8 @@ def _get_employee_presence_data(target_date=None, personnel_id=None):
         })
 
     return presence_data
+
+
 @bp.route('/dashboard')
 @login_required
 @employee_required

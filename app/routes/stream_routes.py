@@ -1,4 +1,5 @@
 # coorporate_app/app/routes/stream_routes.py
+import base64
 import cv2
 import os
 import json
@@ -81,11 +82,9 @@ def save_label_to_name(label_to_name):
         
 def get_camera_instance(camera_source):
     global _camera_instance_cache
-    processed_source = camera_source
-    if isinstance(camera_source, str) and camera_source.isdigit():
-        processed_source = int(camera_source)
 
-    # Check cache
+    processed_source = int(camera_source) if isinstance(camera_source, str) and camera_source.isdigit() else camera_source
+
     if processed_source in _camera_instance_cache:
         cap = _camera_instance_cache[processed_source]
         if cap.isOpened():
@@ -96,26 +95,31 @@ def get_camera_instance(camera_source):
             del _camera_instance_cache[processed_source]
 
     cap = None
+    tried_backends = []
+
     if isinstance(processed_source, int):
-        if os.name == 'nt':
-            cap = cv2.VideoCapture(processed_source, cv2.CAP_DSHOW)
-            if not cap.isOpened():
-                cap = cv2.VideoCapture(processed_source, cv2.CAP_MSMF)
-        if not cap or not cap.isOpened():
-            cap = cv2.VideoCapture(processed_source, cv2.CAP_V4L2)
-        if not cap or not cap.isOpened():
-            cap = cv2.VideoCapture(processed_source)
+        # 👇 Prioritaskan backend tercepat
+        for backend in [cv2.CAP_DSHOW, cv2.CAP_V4L2, cv2.CAP_ANY]:  # Hindari CAP_MSMF jika tidak perlu
+            tried_backends.append(backend)
+            cap = cv2.VideoCapture(processed_source, backend)
+            if cap.isOpened():
+                print(f"[get_camera_instance] Camera opened with backend {backend}.")
+                break
     else:
-        cap = cv2.VideoCapture(processed_source, cv2.CAP_FFMPEG)
+        for backend in [cv2.CAP_FFMPEG, cv2.CAP_ANY]:
+            tried_backends.append(backend)
+            cap = cv2.VideoCapture(processed_source, backend)
+            if cap.isOpened():
+                print(f"[get_camera_instance] Stream opened with backend {backend}.")
+                break
 
     if cap and cap.isOpened():
         _camera_instance_cache[processed_source] = cap
-        print(f"Camera instance for source '{processed_source}' opened and cached.")
+        return cap
     else:
-        print(f"Error: Could not open camera source '{processed_source}'.")
+        print(f"[get_camera_instance] ❌ ERROR: Failed to open camera source '{processed_source}' using backends: {tried_backends}")
         return None
 
-    return cap
 
 def release_camera_instance(camera_source):
     if camera_source in _camera_instance_cache:
@@ -392,7 +396,6 @@ def capture_page():
 
 @bp.route('/capture_data', methods=['POST'], endpoint='capture_faces')
 @login_required
-
 def capture_faces():
     """Endpoint to capture face images from webcam and save them for personnel dataset."""
     personnel = Personnels.query.filter_by(user_account=current_user).first()
@@ -407,6 +410,126 @@ def capture_faces():
         flash(result['message'], 'danger')
         
     return jsonify(result)
+
+# @bp.route('/capture-data', methods=['POST']) # Endpoint untuk menerima data gambar
+# @login_required
+# def capture_faces(): # Nama fungsi API dibedakan dari nama fungsi view halaman
+#     personnel = Personnels.query.filter_by(user_account=current_user).first()
+#     if not personnel:
+#         return jsonify({'status': 'error', 'message': 'User personnel data not found.'}), 400
+
+#     data = request.get_json()
+#     if not data or 'image_data' not in data:
+#         return jsonify({'status': 'error', 'message': 'No image data provided.'}), 400
+
+#     image_data_url = data['image_data']
+
+#     try:
+#         # Ekstrak bagian base64
+#         if ',' not in image_data_url:
+#             return jsonify({'status': 'error', 'message': 'Invalid image data format (missing comma).'}), 400
+#         header, encoded_data = image_data_url.split(',', 1)
+#         img_bytes = base64.b64decode(encoded_data)
+#     except Exception as e:
+#         current_app.logger.error(f"Base64 decoding error: {e}")
+#         return jsonify({'status': 'error', 'message': f'Invalid base64 image data: {e}.'}), 400
+
+#     # Konversi bytes ke np array dan decode ke gambar cv2
+#     np_arr = np.frombuffer(img_bytes, np.uint8)
+#     frame = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+
+#     if frame is None:
+#         return jsonify({'status': 'error', 'message': 'Could not decode image data.'}), 400
+    
+#     if face_cascade is None: # Periksa apakah cascade sudah dimuat
+#         current_app.logger.error("face_cascade tidak dimuat, deteksi wajah tidak bisa dilakukan.")
+#         return jsonify({'status': 'error', 'message': 'Face detection module not initialized on server.'}), 500
+
+
+#     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+#     # Parameter detectMultiScale mungkin perlu disesuaikan untuk performa/akurasi
+#     faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(50, 50))
+
+#     # Dapatkan base path untuk UPLOAD_FOLDER dari konfigurasi aplikasi
+#     # Pastikan UPLOAD_FOLDER diset ke path absolut atau path yang benar
+#     # dan idealnya berada di dalam folder 'static' Anda jika ingin mudah diakses via URL.
+#     # Contoh: UPLOAD_FOLDER = os.path.join(app.root_path, 'static', 'uploads')
+#     base_upload_folder = current_app.config.get('UPLOAD_FOLDER')
+#     if not base_upload_folder:
+#         current_app.logger.error("UPLOAD_FOLDER tidak dikonfigurasi di aplikasi.")
+#         return jsonify({'status': 'error', 'message': 'Server UPLOAD_FOLDER not configured.'}), 500
+
+#     # Buat folder khusus untuk personel ini di dalam subfolder 'personnel_images'
+#     personnel_images_root = os.path.join(base_upload_folder, "personnel_images")
+#     personnel_folder_on_server = os.path.join(personnel_images_root, str(personnel.id) + "_" + "".join(c if c.isalnum() else "_" for c in personnel.name) ) # Nama folder lebih aman
+    
+#     try:
+#         os.makedirs(personnel_folder_on_server, exist_ok=True)
+#     except OSError as e:
+#         current_app.logger.error(f"Gagal membuat direktori {personnel_folder_on_server}: {e}")
+#         return jsonify({'status': 'error', 'message': 'Could not create directory for images on server.'}), 500
+
+
+#     existing_images_count_db = Personnel_Images.query.filter_by(personnel_id=personnel.id).count()
+#     captured_faces_this_frame = 0
+
+#     for (x, y, w, h) in faces:
+#         face_roi = frame[y:y+h, x:x+w] # Simpan ROI berwarna, bukan grayscale, untuk kualitas dataset
+#         if face_roi.size > 0:
+#             existing_images_count_db += 1 # Increment untuk nama file unik
+#             # Buat nama file yang lebih aman dan informatif
+#             filename = f"face_{personnel.id}_{existing_images_count_db}_{datetime.now().strftime('%Y%m%d%H%M%S%f')}.jpg"
+#             filepath_on_server = os.path.join(personnel_folder_on_server, filename)
+            
+#             try:
+#                 cv2.imwrite(filepath_on_server, face_roi)
+#                 current_app.logger.info(f"Wajah disimpan ke: {filepath_on_server}")
+
+#                 # Buat path relatif terhadap UPLOAD_FOLDER untuk disimpan di DB
+#                 # Ini penting agar url_for('static', filename=...) bisa bekerja.
+#                 # relative_path_to_upload_folder = os.path.relpath(filepath_on_server, base_upload_folder).replace("\\", "/")
+                
+#                 # Cara yang lebih aman untuk path relatif jika UPLOAD_FOLDER adalah root untuk static/uploads
+#                 # dan personnel_images adalah subfolder dari UPLOAD_FOLDER/personnel_images
+#                 # Path yang disimpan di DB harus relatif terhadap folder static Flask Anda, bukan UPLOAD_FOLDER
+#                 # Asumsikan UPLOAD_FOLDER = 'app/static/uploads'
+#                 # maka relative_path akan seperti 'uploads/personnel_images/id_nama/face_....jpg'
+#                 # yang bisa digunakan di url_for('static', filename=relative_path)
+                
+#                 # Cara membuat path relatif yang benar:
+#                 # 1. Dapatkan path absolut ke folder static Flask
+#                 static_folder_abs = os.path.abspath(current_app.static_folder)
+#                 # 2. Dapatkan path absolut file yang disimpan
+#                 filepath_abs = os.path.abspath(filepath_on_server)
+
+#                 if filepath_abs.startswith(static_folder_abs):
+#                     relative_path_for_db = os.path.relpath(filepath_abs, static_folder_abs).replace("\\", "/")
+#                     new_image = Personnel_Images(personnel_id=personnel.id, image_path=relative_path_for_db)
+#                     db.session.add(new_image)
+#                     captured_faces_this_frame += 1
+#                 else:
+#                     current_app.logger.error(f"File yang disimpan {filepath_abs} tidak berada di dalam static folder {static_folder_abs}. Tidak bisa membuat path relatif untuk DB.")
+
+#             except Exception as e_write:
+#                 current_app.logger.error(f"Gagal menyimpan file gambar {filepath_on_server}: {e_write}")
+#                 # Lanjutkan ke wajah berikutnya jika ada
+#                 continue
+
+
+#     if captured_faces_this_frame > 0:
+#         try:
+#             db.session.commit()
+#             return jsonify({'status': 'success', 
+#                             'message': f'{captured_faces_this_frame} wajah berhasil diambil dan disimpan.', 
+#                             'face_saved_this_frame': True,
+#                             'total_images_for_personnel': existing_images_count_db
+#                             })
+#         except Exception as e_commit:
+#             db.session.rollback()
+#             current_app.logger.error(f"Gagal commit ke database: {e_commit}")
+#             return jsonify({'status': 'error', 'message': 'Gagal menyimpan data gambar ke database.'}), 500
+#     else:
+#         return jsonify({'status': 'success', 'message': 'Tidak ada wajah terdeteksi di frame ini.', 'face_saved_this_frame': False})
 
 # Variabel global tracking waktu (optional)
 last_detection_time = {}
@@ -537,6 +660,7 @@ def generate_face_recognition_frames(camera_source, cam_settings, model_folder_p
         yield (b'--frame\r\n'
                b'Content-Type: image/jpeg\r\n\r\n' + jpeg.tobytes() + b'\r\n')
         return
+    
 
     recognizer = cv2.face.LBPHFaceRecognizer_create()
     model_file_path = get_model(model_folder_path)
@@ -552,88 +676,121 @@ def generate_face_recognition_frames(camera_source, cam_settings, model_folder_p
 
     recognizer.read(model_file_path)
     label_to_name = load_label(model_folder_path) if model_folder_path else load_label_to_name()
+    failed_read_count = 0
+    max_failed_reads = 5  # Jumlah maksimal gagal read sebelum reconnect
+    face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+    if face_cascade.empty():
+        print("Error: Haar Cascade model gagal dimuat.")
+        dummy_frame = np.zeros((480, 640, 3), dtype=np.uint8)
+        cv2.putText(dummy_frame, "MODEL ERROR!", (100, 240), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+        _, jpeg = cv2.imencode('.jpg', dummy_frame)
+        yield (b'--frame\r\n'
+            b'Content-Type: image/jpeg\r\n\r\n' + jpeg.tobytes() + b'\r\n')
+        return
 
     while True:
-        ret, frame = cap.read()
-        if not ret:
-            print(f"Failed to read frame from camera {camera_source}. Attempting to re-open.")
-            cap.release()
-            cap = get_camera_instance(int(camera_source) if str(camera_source).isdigit() else camera_source)
-            if not cap or not cap.isOpened():
-                print(f"Failed to re-open camera {camera_source}. Stopping stream.")
-                break
-            continue
+        try:
+            ret, frame = cap.read()
 
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        faces_detected_in_frame = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5)
-        
-        if len(faces_detected_in_frame) == 0:
-            pass
+            if not ret:
+                print(f"[Stream] Failed to read frame from {camera_source}. Attempting to recover... ({failed_read_count + 1})")
+                failed_read_count += 1
+                time.sleep(0.05)  # beri waktu CPU istirahat sedikit
 
-        for (x, y, w, h) in faces_detected_in_frame:
-            face_roi = cv2.resize(gray[y:y+h, x:x+w], (200, 200))
-            label, confidence = recognizer.predict(face_roi)
+                if failed_read_count >= max_failed_reads:
+                    print(f"[Stream] Reconnecting stream for {camera_source} after {max_failed_reads} failed reads.")
+                    cap.release()
+                    time.sleep(1)  # beri delay sebelum reconnect
 
-            name = label_to_name.get(label, "Unknown")
-            timer_text = ""
-            display_color = (0, 0, 255)
+                    cap = get_camera_instance(int(camera_source) if str(camera_source).isdigit() else camera_source)
+                    if not cap or not cap.isOpened():
+                        print(f"[Stream] Reconnect failed. Stopping stream for {camera_source}.")
+                        break
+                    failed_read_count = 0  # reset hitungan gagal
+                continue
 
-            if confidence < 70:
-                display_color = (0, 255, 0)
-                
-                if cam_settings and cam_settings.role_camera == Camera_Settings.ROLE_TRACKING and name != "Unknown":
-                    current_time = datetime.now()
-                    if name in last_detection_time:
-                        elapsed_time = (current_time - last_detection_time[name]).total_seconds()
-                        detection_times[name] += elapsed_time
-                    else:
-                        detection_times[name] = 0
-                    last_detection_time[name] = current_time
-                    
-                    total_time_recognized = int(detection_times.get(name, 0))
-                    timer_text = f'Timer: {total_time_recognized}s'
+            failed_read_count = 0
 
-                    if (current_time - last_save_time_global) >= timedelta(minutes=1):
-                        try:
-                            with app.app_context():
-                                personnel_obj = db.session.query(Personnels).filter_by(name=name).first()
-                                if personnel_obj and cam_settings:
-                                    new_work_timer = Work_Timer(
-                                        personnel_id=personnel_obj.id,
-                                        camera_id=cam_settings.id,
-                                        type=Work_Timer.TYPE_FACE_DETECTED,
-                                        datetime=datetime.utcnow(),
-                                        timer=int(detection_times[name])
-                                    )
-                                    db.session.add(new_work_timer)
-                                    db.session.commit()
-                                    print(f"Saved Work_Timer for {name}: {detection_times[name]}s")
-                                else:
-                                    print(f"Skipping Work_Timer save for {name}: Personnel or Camera settings not found.")
-                        except Exception as e:
-                            with app.app_context():
-                                db.session.rollback()
-                            print(f"Error saving Work_Timer to database: {e}")
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            if gray is None or gray.size == 0:
+                print("Warning: Frame kosong, skip detection")
+                continue  # Skip iterasi ini
 
+            try:
+                faces_detected_in_frame = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5)
+            except cv2.error as e:
+                print(f"OpenCV detectMultiScale error: {e}")
+                continue  # Skip iterasi ini
 
-                        last_save_time_global = current_time
-            else:
-                name = "Unknown"
+            if len(faces_detected_in_frame) == 0:
+                pass
+
+            for (x, y, w, h) in faces_detected_in_frame:
+                face_roi = cv2.resize(gray[y:y+h, x:x+w], (200, 200))
+                label, confidence = recognizer.predict(face_roi)
+
+                name = label_to_name.get(label, "Unknown")
+                timer_text = ""
                 display_color = (0, 0, 255)
-                if name in last_detection_time:
-                    del last_detection_time[name]
-                    if name in detection_times:
-                        del detection_times[name]
 
-            cv2.rectangle(frame, (x, y), (x+w, y+h), display_color, 2)
-            cv2.putText(frame, f'{name} ({confidence:.2f}), {timer_text}', (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, display_color, 2)
+                if confidence < 60:
+                    display_color = (0, 255, 0)
+                    
+                    if cam_settings and cam_settings.role_camera == Camera_Settings.ROLE_TRACKING and name != "Unknown":
+                        current_time = datetime.now()
+                        if name in last_detection_time:
+                            elapsed_time = (current_time - last_detection_time[name]).total_seconds()
+                            detection_times[name] += elapsed_time
+                        else:
+                            detection_times[name] = 0
+                        last_detection_time[name] = current_time
+                        
+                        total_time_recognized = int(detection_times.get(name, 0))
+                        timer_text = f'Timer: {total_time_recognized}s'
 
-        ret, jpeg = cv2.imencode('.jpg', frame)
-        if not ret:
-            break
-        yield (b'--frame\r\n'
-               b'Content-Type: image/jpeg\r\n\r\n' + jpeg.tobytes() + b'\r\n')
+                        if (current_time - last_save_time_global) >= timedelta(minutes=1):
+                            try:
+                                with app.app_context():
+                                    personnel_obj = db.session.query(Personnels).filter_by(name=name).first()
+                                    if personnel_obj and cam_settings:
+                                        new_work_timer = Work_Timer(
+                                            personnel_id=personnel_obj.id,
+                                            camera_id=cam_settings.id,
+                                            type=Work_Timer.TYPE_FACE_DETECTED,
+                                            datetime=datetime.utcnow(),
+                                            timer=int(detection_times[name])
+                                        )
+                                        db.session.add(new_work_timer)
+                                        db.session.commit()
+                                        print(f"Saved Work_Timer for {name}: {detection_times[name]}s")
+                                    else:
+                                        print(f"Skipping Work_Timer save for {name}: Personnel or Camera settings not found.")
+                            except Exception as e:
+                                with app.app_context():
+                                    db.session.rollback()
+                                print(f"Error saving Work_Timer to database: {e}")
 
+
+                            last_save_time_global = current_time
+                else:
+                    name = "Unknown"
+                    display_color = (0, 0, 255)
+                    if name in last_detection_time:
+                        del last_detection_time[name]
+                        if name in detection_times:
+                            del detection_times[name]
+
+                cv2.rectangle(frame, (x, y), (x+w, y+h), display_color, 2)
+                cv2.putText(frame, f'{name} ({confidence:.2f}), {timer_text}', (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, display_color, 2)
+
+            ret, jpeg = cv2.imencode('.jpg', frame)
+            if not ret:
+                break
+            yield (b'--frame\r\n'
+                b'Content-Type: image/jpeg\r\n\r\n' + jpeg.tobytes() + b'\r\n')
+        except Exception as e:
+            print(f"[Stream Error] {e}")
+            break  # atau continue jika mau tetap lanjut
     release_camera_instance(int(camera_source) if str(camera_source).isdigit() else camera_source)
 
 @bp.route('/recognize/<int:cam_id>')
@@ -1042,32 +1199,101 @@ def start_camera_thread(cam_id, feed_src):
 
     thread = Thread(target=capture, daemon=True)
     thread.start()
+    
+@bp.route('/quick_preview/<int:cam_id>')
+def quick_preview(cam_id):
+    def gen():
+        print(f"[Quick Preview] Starting camera preview for {cam_id}...")
+        cap = cv2.VideoCapture(cam_id)
+        if not cap.isOpened():
+            yield b"Failed to open camera."
+            return
+
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                break
+            ret, buffer = cv2.imencode('.jpg', frame)
+            if not ret:
+                continue
+            frame_bytes = buffer.tobytes()
+            yield (b'--frame\r\n'
+                   b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
+            time.sleep(1 / 15)
+
+        cap.release()
+
+    return Response(gen(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
 @bp.route('/capture_presence_video/<int:cam_id>')
 def capture_presence_video(cam_id):
     camera = Camera_Settings.query.get(cam_id)
     if not camera or not camera.feed_src:
+        # Mengirim respons error yang bisa ditangani klien jika perlu,
+        # atau biarkan browser menampilkan gambar rusak yang akan memicu onerror.
+        # Untuk multipart, lebih baik menghentikan stream jika sumber tidak valid.
+        # Kita bisa mengirim satu frame error dan kemudian berhenti.
+        error_msg = "Invalid camera source"
+        dummy_frame = np.zeros((240, 320, 3), dtype=np.uint8) # Frame kecil untuk error
+        cv2.putText(dummy_frame, error_msg, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+        ret, jpeg = cv2.imencode('.jpg', dummy_frame)
+        if ret:
+            return Response(b'--frame\r\nContent-Type: image/jpeg\r\n\r\n' + jpeg.tobytes() + b'\r\n',
+                            mimetype='multipart/x-mixed-replace; boundary=frame')
         return "Invalid camera source", 404
 
-    # Mulai thread jika belum jalan
+
+    # Mulai thread jika belum jalan atau pastikan thread untuk cam_id ini aktif
     start_camera_thread(cam_id, camera.feed_src)
 
-    def generate_frames():
+    def generate_frames_with_timeout():
+        last_valid_frame_time = time.time()
+        NO_FRAME_TIMEOUT = 10  # Detik. Jika tidak ada frame baru selama ini, anggap stream mati.
+
         while True:
-            frame = None
+            current_time = time.time()
+            frame_to_send = None
+
             if cam_id in camera_frames:
                 with camera_locks[cam_id]:
-                    frame = camera_frames[cam_id]
+                    # Ambil frame hanya jika ada dan merupakan numpy array
+                    if isinstance(camera_frames[cam_id], np.ndarray):
+                        frame_to_send = camera_frames[cam_id].copy() # Kirim copy untuk thread safety
 
-            if frame is not None:
-                ret, jpeg = cv2.imencode('.jpg', frame)
+            if frame_to_send is not None:
+                last_valid_frame_time = current_time
+                ret, jpeg = cv2.imencode('.jpg', frame_to_send)
                 if ret:
-                    yield (b'--frame\r\n'
-                           b'Content-Type: image/jpeg\r\n\r\n' + jpeg.tobytes() + b'\r\n')
-            time.sleep(0.03)
+                    try:
+                        yield (b'--frame\r\n'
+                               b'Content-Type: image/jpeg\r\n\r\n' + jpeg.tobytes() + b'\r\n')
+                    except Exception as e: # Misal client disconnect
+                        print(f"[Generator {cam_id}] Error yielding frame: {e}")
+                        break 
+                else:
+                    print(f"[Generator {cam_id}] Failed to encode frame.")
+                    # Pertimbangkan untuk mengirim frame error di sini juga atau break
+            else:
+                # Tidak ada frame valid yang tersedia dari thread kamera
+                if (current_time - last_valid_frame_time) > NO_FRAME_TIMEOUT:
+                    print(f"[Generator {cam_id}] No valid frame received for {NO_FRAME_TIMEOUT}s. Stopping stream yield.")
+                    # Mengirim frame "NO SIGNAL" atau error sebelum break
+                    dummy_frame = np.zeros((240, 320, 3), dtype=np.uint8)
+                    cv2.putText(dummy_frame, "NO SIGNAL", (50, 120), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+                    ret, jpeg = cv2.imencode('.jpg', dummy_frame)
+                    if ret:
+                        try:
+                            yield (b'--frame\r\n'
+                                   b'Content-Type: image/jpeg\r\n\r\n' + jpeg.tobytes() + b'\r\n')
+                        except Exception as e:
+                            print(f"[Generator {cam_id}] Error yielding NO SIGNAL frame: {e}")
+                    break # Hentikan generator, ini akan memutus koneksi klien & memicu img.onerror
 
-    return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
+            time.sleep(1 / 20) # Target sekitar 20 FPS untuk generator ini, sesuaikan dengan FPS_TARGET di thread capture
 
+        print(f"[Generator {cam_id}] Frame generation stopped.")
+
+    return Response(generate_frames_with_timeout(), mimetype='multipart/x-mixed-replace; boundary=frame')
 def capture_presence_logic(camera_id=0):
     # ... (kode Anda, tidak diubah) ...
     # Pastikan semua variabel seperti current_app, face_cascade, dll. tersedia
@@ -1176,12 +1402,17 @@ def capture_presence_logic(camera_id=0):
                 person_processed_in_this_call = True # Tandai bahwa seseorang telah diproses
                 
                 # Tidak perlu cap.release() di sini karena akan dirilis di finally atau setelah loop max_frames
-                
+                parts = name.rsplit('_', 1)
+                display_name = name # Default ke nama asli
+
+                # Periksa apakah ada pemisahan dan bagian kedua adalah angka (menandakan format "nama_angka")
+                if len(parts) == 2 and parts[1].isdigit():
+                    display_name = parts[0]
                 # Kembalikan hasil berdasarkan output process_attendance_entry
                 if result == 'success':
-                    return {'success': True, 'message': f'Absensi tercatat untuk {name}.'}
+                    return {'success': True, 'message': f'Absensi tercatat untuk {display_name}.'}
                 elif result == 'already_present': # Sesuaikan string ini dengan output aktual Anda
-                    return {'success': False, 'message': f'{name} sudah absen hari ini.'} # "False" agar tidak ada notif sukses berulang
+                    return {'success': False, 'message': f'{display_name} sudah absen hari ini.'} # "False" agar tidak ada notif sukses berulang
                 elif result == 'not_eligible_for_leave':
                     return {'success': False, 'message': 'Tidak dapat mencatat IZIN sebelum TEPAT WAKTU atau TERLAMBAT'}
                 elif result == 'personnel_not_found':
@@ -1259,3 +1490,56 @@ def capture_presence_cam():
         # kita bisa tetap return 200 OK tapi dengan status error di JSON
         # agar frontend bisa menanganinya sebagai info/peringatan.
         return jsonify({'status': 'error', 'message': result.get('message', 'Terjadi kesalahan')}), status_code if status_code != 200 else 200
+    
+@bp.route('/process_frame', methods=['POST'])
+@login_required
+def process_frame():
+    """
+    Endpoint untuk menerima frame dari frontend,
+    deteksi wajah dilakukan di backend (kalau ada),
+    atau minimal simpan gambar frame ke folder personnel,
+    dan simpan pathnya ke database.
+    """
+
+    data = request.get_json()
+    image_data = data.get('image_data', None)
+    if not image_data:
+        return jsonify({'status': 'error', 'message': 'No image data provided.'}), 400
+
+    # Parse image base64 data URL "data:image/jpeg;base64,/9j/...."
+    try:
+        header, encoded = image_data.split(',', 1)
+        img_bytes = base64.b64decode(encoded)
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': f'Invalid image data: {str(e)}'}), 400
+
+    # Get personnel user
+    personnel = Personnels.query.filter_by(user_account=current_user).first()
+    if not personnel:
+        return jsonify({'status': 'error', 'message': 'Personnel data not found.'}), 400
+
+    # Save image file (e.g. jpg) ke folder personnel
+    personnel_folder = os.path.join(current_app.config['UPLOAD_FOLDER'], 'personnel', str(personnel.id))
+    os.makedirs(personnel_folder, exist_ok=True)
+
+    # Buat nama file unik, misal timestamp
+    import time
+    file_name = f"face_{personnel.id}_{int(time.time() * 1000)}.jpg"
+    file_path = os.path.join(personnel_folder, file_name)
+
+    with open(file_path, 'wb') as f:
+        f.write(img_bytes)
+
+    # Simpan ke DB relative path
+    relative_path = os.path.relpath(file_path, current_app.config['UPLOAD_FOLDER']).replace("\\", "/")
+    new_image = Personnel_Images(personnel_id=personnel.id, image_path=relative_path)
+    db.session.add(new_image)
+    db.session.commit()
+
+    # Untuk demo, kita anggap selalu berhasil simpan 1 face
+    return jsonify({'status': 'success', 'message': 'Face image saved.', 'face_saved_this_frame': True})
+
+@bp.route('/ping_server_health_check')
+def ping_server():
+    """Endpoint sederhana untuk memeriksa apakah server aktif."""
+    return jsonify(status="ok", message="Server is alive."), 200

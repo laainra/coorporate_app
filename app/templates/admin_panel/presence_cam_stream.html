@@ -43,31 +43,30 @@
               {# --- PERUBAHAN DI SINI --- #}
               {# Menggunakan url_for() Flask. 'bp' adalah nama Blueprint Anda. #}
              <img id="img_stream"
-                data-stream-url-template="{{ url_for('stream.capture_presence_video', cam_id=0).replace('0', 'CAM_ID') }}"
-
-                style="width: 100%; max-height: 60vh; object-fit: contain; border-radius: 0.25rem; display: none;"
-                alt="Live Stream Kamera"/>
+                  data-stream-url-template="{{ url_for('stream.capture_presence_video', cam_id=0) | replace('0', 'CAM_ID') }}"
+                  style="width: 100%; max-height: 60vh; object-fit: contain; border-radius: 0.25rem; display: none;"
+                  alt="Live Stream Kamera"/>
 
               <div id="stream-alert-box" class="p-3 text-white"></div>
             </div>
-             <div id="alert-box" class="mt-2"></div>
+              <div id="alert-box" class="mt-2"></div>
           </div>
 
           <div class="col-md-5"> {# Sempitkan kolom tabel #}
             <h4 class="mb-3">Absen Hari Ini - <span id="today-date">Memuat tanggal...</span></h4>
             <div class="table-responsive" style="max-height: calc(60vh + 70px);">
                 <table class="table table-sm table-bordered table-striped" id="presence-table">
-                  <thead>
-                    <tr>
-                      <th>Nama</th>
-                      <th>Status</th>
-                      <th>Waktu</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr><td colspan="3" class="text-center text-muted">Memuat data absensi...</td></tr>
-                  </tbody>
-                </table>
+                <thead>
+                  <tr>
+                    <th>Nama</th>
+                    <th>Status</th>
+                    <th>Waktu</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr><td colspan="3" class="text-center text-muted">Memuat data absensi...</td></tr>
+                </tbody>
+              </table>
             </div>
           </div>
         </div>
@@ -78,16 +77,113 @@
 
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script>
+
+  // Fungsi ini harus ada di kedua file HTML di dalam tag <script> utama
+  let reloadCheckTimeoutId = null;
+  const CHECK_SERVER_DELAY_MS = 10000; // Tunggu 10 detik sebelum memeriksa server
+
+  function checkServerAndReloadPage(delayMs = CHECK_SERVER_DELAY_MS) {
+    clearTimeout(reloadCheckTimeoutId); // Hindari beberapa pengecekan yang tertunda
+    console.log(`Stream gagal total, server mungkin restart. Akan dicek dalam ${delayMs / 1000} detik untuk reload halaman.`);
+
+    reloadCheckTimeoutId = setTimeout(() => {
+      // Gunakan URL root atau endpoint ping yang spesifik
+      const pingUrl = "{{ url_for('stream.ping_server') }}"; // Menggunakan url_for dari Flask
+
+      fetch(pingUrl)
+        .then(response => {
+          if (response.ok) {
+            console.log('Server terdeteksi aktif kembali. Me-reload halaman...');
+            window.location.reload();
+          } else {
+            console.log('Pengecekan server mengembalikan status error. Belum me-reload. Status:', response.status);
+            // Bisa dijadwalkan pengecekan ulang di sini jika diperlukan
+            // checkServerAndReloadPage(delayMs + 5000); // Coba lagi dengan delay lebih lama
+          }
+        })
+        .catch(error => {
+          console.log('Pengecekan server gagal (kemungkinan error jaringan atau server masih down). Belum me-reload. Error:', error);
+          // Bisa dijadwalkan pengecekan ulang di sini
+          // checkServerAndReloadPage(delayMs + 5000); // Coba lagi dengan delay lebih lama
+        });
+    }, delayMs);
+  }
+
+
+
+  // Variabel dan logika stream Anda
   let currentSelectedCameraId = null;
   const imgStream = document.getElementById('img_stream');
   const loader = document.getElementById('loader');
   const streamAlertBox = document.getElementById('stream-alert-box');
   const cameraSelect = document.getElementById('cameraSelect');
-  const streamUrlTemplate = imgStream.dataset.streamUrlTemplate;
+  // Pastikan imgStream didefinisikan sebelum streamUrlTemplate diakses
+  const streamUrlTemplate = imgStream ? imgStream.dataset.streamUrlTemplate : null;
 
 
+  let retryTimeoutId = null; 
+  let currentRetryCount = 0;
+  const MAX_STREAM_RETRIES = 3; // Kurangi untuk tes lebih cepat jika perlu
+  const STREAM_RETRY_DELAY_MS = 3000; 
+  const PREFERRED_CAMERA_ID_KEY = 'preferredCameraId_presenceStream'; 
 
-  function updateVideoStream(camId) {
+  if (imgStream) { // Hanya tambahkan event listener jika imgStream ada
+      imgStream.onload = () => {
+        clearTimeout(retryTimeoutId); 
+        currentRetryCount = 0; 
+        loader.style.display = 'none';
+        imgStream.style.display = 'block';
+        streamAlertBox.innerHTML = ''; 
+        console.log("Stream berhasil dimuat untuk kamera ID:", currentSelectedCameraId);
+      };
+
+      imgStream.onerror = () => {
+        clearTimeout(retryTimeoutId);
+        loader.style.display = 'none';
+        imgStream.style.display = 'none';
+        // Hapus src agar tidak menampilkan ikon gambar rusak permanen
+        imgStream.src = ""; 
+
+        if (currentSelectedCameraId) { // Hanya retry jika ada kamera yang dipilih
+          currentRetryCount++; // Pindahkan increment ke sini agar logikanya lebih jelas
+          if (currentRetryCount <= MAX_STREAM_RETRIES) { // Bandingkan dengan <=
+            const message = `<div class="alert alert-warning">Stream terputus. Mencoba lagi ke ID ${currentSelectedCameraId}... (${currentRetryCount}/${MAX_STREAM_RETRIES})</div>`;
+            streamAlertBox.innerHTML = message;
+            console.warn(`Error memuat stream (Presence) untuk ID ${currentSelectedCameraId}. Mencoba lagi... (Percobaan ${currentRetryCount})`);
+            
+            retryTimeoutId = setTimeout(() => {
+              if (cameraSelect && cameraSelect.value === currentSelectedCameraId) { // Pastikan kamera tidak diganti & elemen ada
+                updateVideoStream(currentSelectedCameraId, true); // Tandai sebagai retry
+              } else {
+                console.log("Pilihan kamera diubah atau elemen tidak ada. Membatalkan retry.");
+                currentRetryCount = 0; 
+              }
+            }, STREAM_RETRY_DELAY_MS);
+          } else { 
+            const errorMessage = `<div class="alert alert-danger">Gagal memuat stream ID ${currentSelectedCameraId} setelah ${MAX_STREAM_RETRIES} percobaan. Server mungkin tidak aktif.</div>`;
+            streamAlertBox.innerHTML = errorMessage;
+            console.error(`Gagal memuat stream (Presence) untuk ID ${currentSelectedCameraId} setelah ${MAX_STREAM_RETRIES} percobaan.`);
+            checkServerAndReloadPage(); 
+          }
+        } else {
+            console.log("Stream error, tapi tidak ada kamera yang dipilih untuk di-retry.");
+        }
+      };
+  } else {
+      console.error("Element 'img_stream' tidak ditemukan!");
+  }
+
+  function updateVideoStream(camId, isRetry = false) {
+    if (!imgStream || !cameraSelect || !loader || !streamAlertBox) {
+        console.error("Satu atau lebih elemen UI stream tidak ditemukan. Tidak bisa update video stream.");
+        return;
+    }
+    
+    if (!isRetry) {
+      clearTimeout(retryTimeoutId);
+      currentRetryCount = 0;
+    }
+
     streamAlertBox.innerHTML = '';
 
     if (!camId || camId === "") {
@@ -97,17 +193,17 @@
       if (cameraSelect.options.length > 1 && cameraSelect.options[0].value === "") {
           streamAlertBox.innerHTML = '<div class="text-muted">Silakan pilih kamera untuk memulai stream.</div>';
       } else if (cameraSelect.options.length === 0 || (cameraSelect.options.length === 1 && cameraSelect.options[0].disabled)) {
-           streamAlertBox.innerHTML = '<div class="text-warning">Tidak ada kamera tersedia.</div>';
+          streamAlertBox.innerHTML = '<div class="text-warning">Tidak ada kamera tersedia.</div>';
       }
       currentSelectedCameraId = null;
       return;
     }
 
-    if (streamUrlTemplate === "#" || !streamUrlTemplate) {
+    if (!streamUrlTemplate || streamUrlTemplate === "#" || !streamUrlTemplate.includes("CAM_ID")) {
         imgStream.style.display = 'none';
         loader.style.display = 'none';
-        streamAlertBox.innerHTML = '<div class="text-danger">Konfigurasi URL stream bermasalah.</div>';
-        console.error("Stream URL template tidak valid:", streamUrlTemplate);
+        streamAlertBox.innerHTML = '<div class="text-danger">Konfigurasi URL stream bermasalah. Template URL tidak valid.</div>';
+        console.error("Stream URL template tidak valid atau tidak mengandung CAM_ID:", streamUrlTemplate);
         currentSelectedCameraId = null;
         return;
     }
@@ -116,260 +212,11 @@
     imgStream.style.display = 'none';
     loader.style.display = 'block';
 
-   let newStreamUrl = streamUrlTemplate.replace('CAM_ID', currentSelectedCameraId);
-
-// Mengganti placeholder /0/
-    newStreamUrl += (newStreamUrl.includes('?') ? '&' : '?') + `t=${new Date().getTime()}`;
-
-    imgStream.src = newStreamUrl;
-
-    imgStream.onload = () => {
-      loader.style.display = 'none';
-      imgStream.style.display = 'block';
-      streamAlertBox.innerHTML = '';
-    };
-    imgStream.onerror = () => {
-      loader.style.display = 'none';
-      imgStream.style.display = 'none';
-      streamAlertBox.innerHTML = `<div class="alert alert-danger">Gagal memuat stream dari kamera ID ${currentSelectedCameraId}. Pastikan kamera aktif dan URL benar.</div>`;
-      console.error("Error loading stream for URL:", newStreamUrl);
-    };
-  }
-
-  function detectPresence() {
-    if (!currentSelectedCameraId) {
-      return;
-    }
-    {# --- PERUBAHAN DI SINI --- #}
-    const presenceUrl = "{{ url_for('stream.capture_presence_cam') }}"; // Menggunakan url_for() Flask
-
-    fetch(presenceUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        // 'X-CSRFToken': getFlaskCsrfToken() // Gunakan jika Flask-WTF CSRF diaktifkan untuk API ini
-      },
-      body: JSON.stringify({ camera_id: currentSelectedCameraId })
-    })
-    .then(res => {
-        if (!res.ok) {
-            return res.json().catch(() => { throw new Error(`HTTP error ${res.status}`) });
-        }
-        return res.json();
-    })
-    .then(data => {
-      if (data.status === "success") {
-        Swal.fire({
-          icon: 'success',
-          title: data.message || 'Absensi berhasil!',
-          showConfirmButton: false,
-          timer: 1800,
-          toast: true,
-          position: 'top-end'
-        });
-        loadPresenceTable();
-      } else if (data.status === "info" || data.status === "error") {
-        const msg = data.message || 'Gagal memproses absensi.';
-        if (!msg.toLowerCase().includes("no face") &&
-            !msg.toLowerCase().includes("tidak ada wajah") &&
-            !msg.toLowerCase().includes("already present") &&
-            !msg.toLowerCase().includes("sudah absen")) {
-             Swal.fire({
-                icon: data.status === "info" ? 'info' : 'warning',
-                title: msg,
-                showConfirmButton: false,
-                timer: 2500,
-                toast: true,
-                position: 'top-end'
-            });
-        }
-      } else if (data.message && !data.status) {
-         Swal.fire({ icon: 'error', title: data.message, showConfirmButton: true });
-      }
-    })
-    .catch(err => {
-      console.error('Error saat deteksi absensi:', err);
-    });
-  }
-
-  function loadPresenceTable() {
-    {# --- PERUBAHAN DI SINI --- #}
-    const tableDataUrl = "{{ url_for('stream.get_today_presences') }}"; // Menggunakan url_for() Flask
-
-    fetch(tableDataUrl)
-      .then(res => {
-          if (!res.ok) { throw new Error(`Gagal mengambil data absensi: ${res.status}`);}
-          return res.json();
-      })
-      .then(response => {
-        const data = response.data;
-        const tbody = document.querySelector('#presence-table tbody');
-        tbody.innerHTML = '';
-
-        if (Array.isArray(data) && data.length > 0) {
-          data.forEach(row => {
-            const tr = document.createElement('tr');
-            let badgeClass = 'bg-secondary';
-            if (row.status) {
-                const statusLower = row.status.toLowerCase();
-                if (statusLower === 'ontime' || statusLower === 'tepat waktu') badgeClass = 'bg-success';
-                else if (statusLower === 'late' || statusLower === 'terlambat') badgeClass = 'bg-warning text-dark';
-                else if (statusLower === 'leave' || statusLower === 'pulang') badgeClass = 'bg-info text-dark';
-            }
-            tr.innerHTML = `
-              <td>${row.name || 'N/A'}</td>
-              <td><span class="badge ${badgeClass}">${row.status || 'N/A'}</span></td>
-               <td>${
-    row.timestamp && row.timestamp !== '-' ? row.timestamp :
-    (row.datetime ? new Date(row.datetime).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit'}) : 'N/A')
-  }</td>
-            `;
-            tbody.appendChild(tr);
-          });
-        } else if (Array.isArray(data) && data.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted">Belum ada data absensi hari ini.</td></tr>';
-        } else {
-          console.error('Data absensi bukan array atau format salah:', response);
-          tbody.innerHTML = '<tr><td colspan="3" class="text-center text-danger">Format data absensi tidak sesuai.</td></tr>';
-        }
-      })
-      .catch(error => {
-        console.error('Error mengambil data absensi:', error);
-        const tbody = document.querySelector('#presence-table tbody');
-        if(tbody) tbody.innerHTML = '<tr><td colspan="3" class="text-center text-danger">Gagal memuat data absensi. Coba lagi nanti.</td></tr>';
-      });
-  }
-
-  document.addEventListener('DOMContentLoaded', function() {
-    const today = new Date();
-    const formattedDate = today.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-    const todayDateEl = document.getElementById('today-date');
-    if (todayDateEl) {
-        todayDateEl.textContent = formattedDate;
-    }
-
-    if (cameraSelect) {
-        const initialCamId = cameraSelect.value;
-        updateVideoStream(initialCamId);
-
-        cameraSelect.addEventListener('change', function() {
-            updateVideoStream(this.value);
-        });
-    } else {
-        console.error("Elemen <select> kamera tidak ditemukan.");
-        if(streamAlertBox) streamAlertBox.innerHTML = "<div class='text-danger'>Komponen pilih kamera tidak ditemukan.</div>";
-    }
-    loadPresenceTable();
-  });
-
-  if (typeof detectPresence === 'function') {
-    setInterval(detectPresence, 7000);
-  }
-  if (typeof loadPresenceTable === 'function') {
-    setInterval(loadPresenceTable, 10000);
-  }
-</script>
-<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-<script>
-  let currentSelectedCameraId = null;
-  const imgStream = document.getElementById('img_stream');
-  const loader = document.getElementById('loader');
-  const streamAlertBox = document.getElementById('stream-alert-box');
-  const cameraSelect = document.getElementById('cameraSelect');
-  const streamUrlTemplate = imgStream.dataset.streamUrlTemplate;
-
-  // --- NEW: Retry logic variables ---
-  let retryTimeoutId = null; // To store the timeout ID for retries
-  let currentRetryCount = 0;
-  const MAX_STREAM_RETRIES = 5; // Max number of automatic retries
-  const STREAM_RETRY_DELAY_MS = 3000; // Delay before retrying (3 seconds)
-
-  imgStream.onload = () => {
-    clearTimeout(retryTimeoutId); // Clear any pending retry
-    currentRetryCount = 0; // Reset retry counter on successful load
-    loader.style.display = 'none';
-    imgStream.style.display = 'block';
-    streamAlertBox.innerHTML = ''; // Clear any status messages
-    console.log("Stream loaded successfully for camera ID:", currentSelectedCameraId);
-  };
-
-  imgStream.onerror = () => {
-    clearTimeout(retryTimeoutId); // Clear any existing retry timeout
-    loader.style.display = 'none';
-    imgStream.style.display = 'none'; // Hide the broken image icon
-
-    if (currentSelectedCameraId) { // Only retry if a camera was supposed to be active
-      if (currentRetryCount < MAX_STREAM_RETRIES) {
-        currentRetryCount++;
-        const message = `<div class="alert alert-warning">Stream terputus. Mencoba menghubungkan kembali ke kamera ID ${currentSelectedCameraId}... (Percobaan ${currentRetryCount}/${MAX_STREAM_RETRIES})</div>`;
-        streamAlertBox.innerHTML = message;
-        console.warn(`Error loading stream for camera ID ${currentSelectedCameraId}. Retrying in ${STREAM_RETRY_DELAY_MS / 1000}s... (Attempt ${currentRetryCount})`);
-
-        retryTimeoutId = setTimeout(() => {
-          // Check if the camera selection hasn't changed in the meantime
-          if (cameraSelect.value === currentSelectedCameraId) {
-            console.log("Executing retry for camera ID:", currentSelectedCameraId);
-            updateVideoStream(currentSelectedCameraId, true); // Pass a flag to indicate it's a retry
-          } else {
-            console.log("Camera selection changed during retry delay. Aborting retry for old ID:", currentSelectedCameraId);
-            currentRetryCount = 0; // Reset for the new selection if it also fails
-          }
-        }, STREAM_RETRY_DELAY_MS);
-
-      } else {
-        const errorMessage = `<div class="alert alert-danger">Gagal memuat stream dari kamera ID ${currentSelectedCameraId} setelah ${MAX_STREAM_RETRIES} percobaan. Server mungkin tidak aktif atau kamera bermasalah.</div>`;
-        streamAlertBox.innerHTML = errorMessage;
-        console.error(`Failed to load stream for camera ID ${currentSelectedCameraId} after ${MAX_STREAM_RETRIES} retries.`);
-      }
-    } else {
-      // No camera was selected, or stream was stopped intentionally by selecting "--Pilih Kamera--"
-      // streamAlertBox.innerHTML = '<div class="text-muted">Stream tidak aktif. Silakan pilih kamera.</div>';
-      // This case is usually handled by updateVideoStream directly when camId is empty.
-    }
-  };
-
-  // Modified updateVideoStream: added an 'isRetry' flag (optional, for logging)
-  // and ensured retry counters are reset when user manually changes selection.
-  function updateVideoStream(camId, isRetry = false) {
-    if (!isRetry) { // If it's a manual change by user, not an automatic retry
-      clearTimeout(retryTimeoutId); // Clear any ongoing retry attempts for a previous stream
-      currentRetryCount = 0; // Reset retry count
-    }
-
-    streamAlertBox.innerHTML = ''; // Clear previous messages
-
-    if (!camId || camId === "") {
-      imgStream.style.display = 'none';
-      imgStream.src = ""; // Clear the src to stop any current loading/erroring
-      loader.style.display = 'none';
-      if (cameraSelect.options.length > 1 && cameraSelect.options[0].value === "") {
-          streamAlertBox.innerHTML = '<div class="text-muted">Silakan pilih kamera untuk memulai stream.</div>';
-      } else if (cameraSelect.options.length === 0 || (cameraSelect.options.length === 1 && cameraSelect.options[0].disabled)) {
-           streamAlertBox.innerHTML = '<div class="text-warning">Tidak ada kamera tersedia.</div>';
-      }
-      currentSelectedCameraId = null;
-      return;
-    }
-
-    if (streamUrlTemplate === "#" || !streamUrlTemplate) {
-        imgStream.style.display = 'none';
-        loader.style.display = 'none';
-        streamAlertBox.innerHTML = '<div class="text-danger">Konfigurasi URL stream bermasalah.</div>';
-        console.error("Stream URL template tidak valid:", streamUrlTemplate);
-        currentSelectedCameraId = null;
-        return;
-    }
-
-    currentSelectedCameraId = camId;
-    imgStream.style.display = 'none'; // Hide img while loading/potentially erroring
-    loader.style.display = 'block';   // Show loader
-
     let newStreamUrl = streamUrlTemplate.replace('CAM_ID', currentSelectedCameraId);
-    // Always add/update a cache-busting parameter
     newStreamUrl += (newStreamUrl.includes('?') ? '&' : '?') + `t=${new Date().getTime()}`;
 
-    console.log(`Attempting to load stream: ${newStreamUrl} (IsRetry: ${isRetry})`);
-    imgStream.src = newStreamUrl; // This will trigger onload or onerror
+    // console.log(`Attempting to load stream (Presence): ${newStreamUrl} (IsRetry: ${isRetry}, Count: ${currentRetryCount})`);
+    imgStream.src = newStreamUrl;
   }
 
   function detectPresence() {
@@ -388,7 +235,6 @@
     })
     .then(res => {
         if (!res.ok) {
-            // Try to parse error json, otherwise throw generic error
             return res.json().catch(() => { throw new Error(`HTTP error ${res.status}`) });
         }
         return res.json();
@@ -397,28 +243,26 @@
       if (data.status === "success") {
         Swal.fire({
           icon: 'success', title: data.message || 'Absensi berhasil!',
-          showConfirmButton: false, timer: 1800, toast: true, position: 'top-end'
+          showConfirmButton: false, timer: 1800, toast: true, position: 'center'
         });
         loadPresenceTable();
       } else if (data.status === "info" || data.status === "error") {
         const msg = data.message || 'Gagal memproses absensi.';
-        // Avoid spamming "no face" or "already present" alerts
         if (!msg.toLowerCase().includes("no face") &&
             !msg.toLowerCase().includes("tidak ada wajah") &&
-            !msg.toLowerCase().includes("already present") &&
-            !msg.toLowerCase().includes("sudah absen")) {
-             Swal.fire({
-                icon: data.status === "info" ? 'info' : 'warning', title: msg,
-                showConfirmButton: false, timer: 2500, toast: true, position: 'top-end'
-            });
+            !msg.toLowerCase().includes("already_present") &&
+            !msg.toLowerCase().includes("not_eligible_for_leave")) {
+              Swal.fire({
+                  icon: data.status === "info" ? 'info' : 'warning', title: msg,
+                  showConfirmButton: false, timer: 2500, toast: true, position: 'center'
+              });
         }
-      } else if (data.message && !data.status) { // Handle other error structures
-         Swal.fire({ icon: 'error', title: data.message, showConfirmButton: true });
+      } else if (data.message && !data.status) {
+          Swal.fire({ icon: 'error', title: data.message, showConfirmButton: true });
       }
     })
     .catch(err => {
       console.error('Error saat deteksi absensi:', err);
-      // Optionally show a less intrusive error for presence detection failures
     });
   }
 
@@ -431,14 +275,14 @@
           return res.json();
       })
       .then(response => {
-        const data = response.data; // Assuming your API wraps data in a 'data' key
+        const data = response.data;
         const tbody = document.querySelector('#presence-table tbody');
-        tbody.innerHTML = ''; // Clear existing rows
+        tbody.innerHTML = '';
 
         if (Array.isArray(data) && data.length > 0) {
           data.forEach(row => {
             const tr = document.createElement('tr');
-            let badgeClass = 'bg-secondary'; // Default badge
+            let badgeClass = 'bg-secondary';
             if (row.status) {
                 const statusLower = row.status.toLowerCase();
                 if (statusLower === 'ontime' || statusLower === 'tepat waktu') badgeClass = 'bg-success';
@@ -477,37 +321,44 @@
         todayDateEl.textContent = formattedDate;
     }
 
-    if (cameraSelect) {
+    if (cameraSelect && imgStream) { // Pastikan elemen ada
+        const storedCameraId = localStorage.getItem(PREFERRED_CAMERA_ID_KEY);
+        if (storedCameraId) {
+            const optionExists = Array.from(cameraSelect.options).some(opt => opt.value === storedCameraId);
+            if (optionExists) {
+                cameraSelect.value = storedCameraId;
+            } else {
+                localStorage.removeItem(PREFERRED_CAMERA_ID_KEY);
+            }
+        }
+        
         const initialCamId = cameraSelect.value;
-        // If a camera is pre-selected (not the placeholder "-- Silakan Pilih Kamera --")
         if (initialCamId && initialCamId !== "") {
-          updateVideoStream(initialCamId);
+            updateVideoStream(initialCamId);
         } else {
-          // Handle case where no camera is initially selected
-          if (cameraSelect.options.length > 1 && cameraSelect.options[0].value === "") {
-              streamAlertBox.innerHTML = '<div class="text-muted">Silakan pilih kamera untuk memulai stream.</div>';
-          } else if (cameraSelect.options.length === 0 || (cameraSelect.options.length === 1 && cameraSelect.options[0].disabled)) {
-              streamAlertBox.innerHTML = '<div class="text-warning">Tidak ada kamera tersedia.</div>';
-          }
+            if (streamAlertBox && cameraSelect.options.length > 1 && cameraSelect.options[0].value === "") {
+                streamAlertBox.innerHTML = '<div class="text-muted">Silakan pilih kamera untuk memulai stream.</div>';
+            } else if (streamAlertBox) {
+                streamAlertBox.innerHTML = '<div class="text-warning">Tidak ada kamera tersedia atau dipilih.</div>';
+            }
         }
 
         cameraSelect.addEventListener('change', function() {
-            updateVideoStream(this.value); // User manually changes camera
+            const selectedId = this.value;
+            if (selectedId && selectedId !== "") {
+                localStorage.setItem(PREFERRED_CAMERA_ID_KEY, selectedId);
+            } else {
+                localStorage.removeItem(PREFERRED_CAMERA_ID_KEY);
+            }
+            updateVideoStream(selectedId);
         });
     } else {
-        console.error("Elemen <select> kamera tidak ditemukan.");
-        if(streamAlertBox) streamAlertBox.innerHTML = "<div class='text-danger'>Komponen pilih kamera tidak ditemukan.</div>";
+        console.error("Elemen 'cameraSelect' atau 'img_stream' tidak ditemukan saat DOMContentLoaded.");
     }
 
-    loadPresenceTable(); // Initial load
-
-    // Set intervals for auto-refreshing presence detection and table
-    if (typeof detectPresence === 'function') {
-      setInterval(detectPresence, 7000); // Check for presence every 7 seconds
-    }
-    if (typeof loadPresenceTable === 'function') {
-      setInterval(loadPresenceTable, 10000); // Refresh presence table every 10 seconds
-    }
+    if (typeof loadPresenceTable === 'function') loadPresenceTable();
+    if (typeof detectPresence === 'function') setInterval(detectPresence, 7000);
+    if (typeof loadPresenceTable === 'function') setInterval(loadPresenceTable, 10000);
   });
 </script>
 {% endblock %}

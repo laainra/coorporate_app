@@ -265,45 +265,46 @@ def employees():
     divisions_list = Divisions.query.filter_by(company_obj=company).all()
     return render_template('admin_panel/employees.html', employees=personnels_list, divisions=divisions_list)
 
-@bp.route('/presence')
-@login_required
-@admin_required
-def presence():
-    company = Company.query.filter_by(user_id=current_user.id).first()
-    if not company:
-        flash("Admin account not linked to a company.", "danger")
-        return redirect(url_for('auth.login'))
+# @bp.route('/presence')
+# @login_required
+# @admin_required
+# def presence():
+#     company = Company.query.filter_by(user_id=current_user.id).first()
+#     if not company:
+#         flash("Admin account not linked to a company.", "danger")
+#         return redirect(url_for('auth.login'))
 
-    date_str = request.args.get('date')
-    personnel_id = request.args.get('personnel_id', type=int)
+#     date_str = request.args.get('date')
+#     personnel_id = request.args.get('personnel_id', type=int)
     
-    selected_date = date.today()
-    if date_str:
-        try:
-            selected_date = datetime.strptime(date_str, "%Y-%m-%d").date()
-        except ValueError:
-            flash("Invalid date format. Using today's date.", "warning")
+#     selected_date = date.today()
+#     if date_str:
+#         try:
+#             selected_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+#         except ValueError:
+#             flash("Invalid date format. Using today's date.", "warning")
 
-    # Filter kehadiran berdasarkan perusahaan admin yang login
-    base_query = Personnel_Entries.query.join(Personnels).filter(
-        Personnels.company_obj == company,
-        cast(Personnel_Entries.timestamp, Date) == selected_date
-    )
+#     # Filter kehadiran berdasarkan perusahaan admin yang login
+#     base_query = Personnel_Entries.query.join(Personnels).filter(
+#         Personnels.company_obj == company,
+#         cast(Personnel_Entries.timestamp, Date) == selected_date
+#     )
 
-    if personnel_id:
-        base_query = base_query.filter(Personnel_Entries.personnel_id == personnel_id)
+#     if personnel_id:
+#         base_query = base_query.filter(Personnel_Entries.personnel_id == personnel_id)
 
-    presence_data = base_query.order_by(Personnel_Entries.timestamp.desc()).all()
-    personnel_list = Personnels.query.filter_by(company_obj=company).all()
+#     presence_data = base_query.order_by(Personnel_Entries.timestamp.desc()).all()
+#     personnel_list = Personnels.query.filter_by(company_obj=company).all()
 
-    context = {
-        'presence_data': presence_data,
-        'personnel_list': personnel_list,
-        'selected_date': selected_date.isoformat(), # Format tanggal ke string standar ISO
-        'selected_personnel': personnel_id,
+#     context = {
+#         'presence_data': presence_data,
+#         'personnel_list': personnel_list,
+#         'selected_date': selected_date.isoformat(), # Format tanggal ke string standar ISO
+#         'selected_personnel': personnel_id,
         
-    }
-    return render_template('admin_panel/presence.html', **context, )
+#     }
+#     print(context)
+#     return render_template('admin_panel/presence.html', **context, )
 
 @bp.route('/presence_cam')
 @login_required
@@ -856,17 +857,50 @@ def presence_view():
         today_date_str=date.today().strftime('%Y-%m-%d'),
         company=company
     )
-
-# Endpoint untuk download Excel (perlu diimplementasikan)
-@bp.route('/presence-report/download', methods=['GET']) # Saya ubah ke GET agar lebih mudah dipanggil dari JS
+@bp.route('/presence-report/download', methods=['GET'])
 @login_required
-# @role_required('admin')
 def download_presence_excel():
-    # Ambil filter_date dan personnel_id dari request.args
-    # Query data yang sama seperti di presence_view
-    # Generate file Excel (misalnya menggunakan Pandas dan OpenPyXL)
-    # Kirim file menggunakan send_file atau buat Response dengan data file
-    flash("Fungsi export belum diimplementasikan.", "info")
-    return redirect(url_for('admin_bp.presence_view', 
-                            filter_date=request.args.get('date'), 
-                            filter_personnel_id=request.args.get('personnel_id')))
+    company = Company.query.filter_by(user_id=current_user.id).first()
+    if not company:
+        flash("User tidak terasosiasi dengan perusahaan.", "danger")
+        return redirect(url_for('auth.login'))
+
+    filter_date_str = request.args.get('filter_date', date.today().strftime('%Y-%m-%d'))
+    filter_personnel_id = request.args.get('filter_personnel_id')
+
+    # Ambil data presensi yang sudah diformat
+    presence_data = get_presences_with_raw_query(company.id, filter_date_str, filter_personnel_id)
+
+    # Buat DataFrame dari data presensi
+    df = pd.DataFrame(presence_data)
+
+    # Hapus kolom path gambar jika tidak dibutuhkan
+    if 'attendance_image_path' in df.columns and 'leaving_image_path' in df.columns:
+        df = df.drop(columns=['attendance_image_path', 'leaving_image_path'])
+
+    # Ubah nama kolom untuk Excel agar lebih user-friendly
+    df = df.rename(columns={
+        'personnel_id': 'ID Karyawan',
+        'name': 'Nama',
+        'attended_time': 'Waktu Masuk',
+        'status': 'Status',
+        'leave_time': 'Waktu Pulang',
+        'work_hours_str': 'Durasi Kerja',
+        'overtime_hours_str': 'Lembur',
+        'notes': 'Catatan'
+    })
+
+    # Simpan ke Excel dalam memory
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='Presensi')
+    output.seek(0)
+
+    filename = f"Laporan_Presensi_{filter_date_str}.xlsx"
+
+    return send_file(
+        output,
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        as_attachment=True,
+        download_name=filename
+    )

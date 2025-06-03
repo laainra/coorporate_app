@@ -7,10 +7,19 @@ __pycache__/
 .env
 .venv/
 venv/
-venv_coorporate_app/
+.venv_coorporate_app/
+.venv_coorporate_app/
+/venv_coorporate_app/
+./venv_coorporate_app/
+/app/static/img/extracted_faces/
+./app/static/img/extracted_faces/
+./app/static/img/personnel_pics/
+/app/static/img/personnel_pics/
+
 *.egg-info/
 instance/
 media/
+
 
 # VSCode
 .vscode/

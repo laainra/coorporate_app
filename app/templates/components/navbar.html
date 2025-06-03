@@ -87,7 +87,7 @@
                             </span>
                         </a>
                     </li>
-                    <li class="nav-item dropdown {% if request.path == url_for('admin.presence_cam_stream') or request.path == url_for('admin.presence') %}active{% endif %}"> {# Adjusted logic for active state #}
+                    <li class="nav-item dropdown {% if request.path == url_for('admin.presence_cam_stream') or request.path == url_for('admin.presence_view') %}active{% endif %}"> {# Adjusted logic for active state #}
                         <a class="nav-link dropdown-toggle" href="#" data-bs-toggle="dropdown" role="button" aria-expanded="false" > {# data-toggle -> data-bs-toggle #}
                             <span class="nav-link-icon d-md-none d-lg-inline-block">
                                 <svg xmlns="http://www.w3.org/2000/svg" class="icon icon-md" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z"></path><polyline points="14 3 14 8 19 8"></polyline><path d="M17 21h-10a2 2 0 0 1 -2 -2v-14a2 2 0 0 1 2 -2h7l5 5v11a2 2 0 0 1 -2 2z"></path><line x1="9" y1="9" x2="10" y2="9"></line><line x1="9" y1="13" x2="15" y2="13"></line><line x1="9" y1="17" x2="15" y2="17"></line></svg>
@@ -103,7 +103,7 @@
                                 </a>
                             </li>
                             <li >
-                                <a class="dropdown-item {% if request.path == url_for('admin.presence') %}active{% endif %}" href="{{ url_for('admin.presence') }}" > {# {% url %} -> url_for #}
+                                <a class="dropdown-item {% if request.path == url_for('admin.presence_view') %}active{% endif %}" href="{{ url_for('admin.presence_view') }}" > {# {% url %} -> url_for #}
                                     Presence Report
                                 </a>
                             </li>

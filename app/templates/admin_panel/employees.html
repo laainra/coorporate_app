@@ -217,44 +217,6 @@ Employees
     </div>
 </div>
 
-{# MODAL DATASET PHOTO (Re-used from employee_panel/dataset.html, or can be in a dedicated components/modal folder) #}
-<div class="modal modal-blur fade" id="modal-dataset-photo" tabindex="-1" role="dialog" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered modal-lg" role="document">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="modal-dataset-photo-title">Personnel Images</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body">
-                <div id="imagesGrid" class="container d-flex justify-content-center flex-wrap gap-4 w-full">
-                    {# Images will be dynamically loaded here #}
-                </div>
-                <div id="noImagesMessage" class="text-center mt-4 hidden">
-                    <p>No images available.</p>
-                </div>
-                <div id="dropArea" class="border-2 border-dashed p-4 mt-4 text-center cursor-pointer">
-                    <p>Drag and drop your images here, or click to select images</p>
-                    <input type="file" id="fileInput" accept="image/*" class="hidden" multiple>
-                </div>
-                <div id="previewArea" class="hidden mt-4">
-                    <div id="imagePreview" class="flex space-x-4">
-                        <h3>Image Preview:</h3>
-                    </div>
-                </div>
-                {# Move dropdown (if needed for Admin to move images between personnel) #}
-                {# <div id="moveDropdown" class="hidden">
-                    <select id="moveToPersonnel" class="form-select">
-                        </select>
-                    <button class="btn btn-primary" onclick="moveImage()">Move</button>
-                </div> #}
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-link link-secondary" data-bs-dismiss="modal">Cancel</button>
-                <a href="#" id="addImageLink" class="btn btn-primary ms-auto" onclick="uploadImages()">Add Image</a>
-            </div>
-        </div>
-    </div>
-</div>
 
 {# MODAL DETAIL EMPLOYEE #}
 <div class="modal modal-blur fade" id="modal-detail-employee" tabindex="-1" role="dialog" aria-hidden="true">
@@ -424,7 +386,7 @@ Employees
 
     function openDatasetPage(personnelId) {
         // This will redirect to the /face/dataset/<id> route
-        window.location.href = `{{ url_for('face.dataset_no_id', personnel_id=0) }}`.replace('0', personnelId);
+        window.location.href = `{{ url_for('stream.dataset_no_id', personnel_id=0) }}`.replace('0', personnelId);
     }
 
     function addEmployee() {

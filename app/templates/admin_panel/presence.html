@@ -29,11 +29,11 @@ Presence Report
                             {# Corrected form action and input names #}
                             <form method="GET" action="{{ url_for('admin.presence_view') }}" id="filter-form">
                                 <div class="form-row align-items-end">
-                            <div class="col-auto mr-2">
-                                <label for="filter-date" class="form-label">Date</label>
-                                {# Use filter_date_str passed from view for the value #}
-                                <input type="date" id="filter-date" name="filter_date" class="form-control calendar-range" placeholder="Date" value="{{ filter_date_str if filter_date_str else today_date_str }}" />
-                            </div>
+                                    <div class="col-auto mr-2">
+                                        <label for="filter-date" class="form-label">Date</label>
+                                        {# Use filter_date_str passed from view for the value #}
+                                        <input type="date" id="filter-date" name="filter_date" class="form-control calendar-range" placeholder="Date" value="{{ filter_date_str if filter_date_str else today_date_str }}" />
+                                    </div>
                                     <div class="col-auto mr-2">
                                         <label for="filter-personnel" class="form-label">Employee</label>
                                         {# Corrected select name #}

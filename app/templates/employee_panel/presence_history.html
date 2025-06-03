@@ -59,11 +59,12 @@ Presence History
                                             <td>{{ entry.date }}</td>
                                             <td>{{ entry.attended }}</td>
                                             <td>
-                                                {% if entry.attendance_image_path and entry.attendance_image_path != 'img/no_image.png' %}
-                                                    <a href="{{ url_for('static', filename=entry.attendance_image_path) }}" target="_blank">View</a>
-                                                {% else %}
-                                                    -
-                                                {% endif %}
+                                           
+                                                         {% if entry.attendance_image_path %}
+                                        <img src="{{ url_for('static', filename=entry.attendance_image_path.lstrip('/')) }}" class="img-fluid" width="35"/> {# lstrip('/') for safety #}
+                                        {% else %}
+                                        No image
+                                        {% endif %}
                                             </td>
                                             <td>{{ entry.leave }}</td>
                                             <td>
