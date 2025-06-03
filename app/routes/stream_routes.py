@@ -6,12 +6,17 @@ import numpy as np
 from datetime import datetime, timedelta, date, time
 from flask import Blueprint, Response, request, jsonify, render_template, current_app, flash, redirect, url_for
 from flask_login import login_required, current_user
-from app.models import Personnels, Personnel_Images, Camera_Settings, Work_Timer, Personnel_Entries, Company, Divisions # Import semua model
+from app.models import Personnels, Personnel_Images, Camera_Settings, Work_Timer, Personnel_Entries, Company, Divisions, Tracking # Import semua model
 from app import db # Import instance db
 from app.utils.decorators import admin_required, employee_required # Decorators
 from sqlalchemy.sql import text 
 import re
 import time
+from ultralytics import YOLO
+import uuid
+import threading
+from flask import Response
+from flask import current_app
 from threading import Thread, Lock
 # ====================================================================
 # Global AI/CV Settings & Initialization
@@ -1259,3 +1264,157 @@ def capture_presence_cam():
         # kita bisa tetap return 200 OK tapi dengan status error di JSON
         # agar frontend bisa menanganinya sebagai info/peringatan.
         return jsonify({'status': 'error', 'message': result.get('message', 'Terjadi kesalahan')}), status_code if status_code != 200 else 200
+
+MODEL_YOLO_FILENAME = 'best.pt'
+yolo_class_names = ['person', 'tie']
+
+def get_yolo_model_path(yolo_models_path):
+    return os.path.join(yolo_models_path, MODEL_YOLO_FILENAME)
+
+yolo_model = None
+def get_yolo_model(yolo_models_path):
+    global yolo_model
+    if yolo_model is None:
+        model_path = get_yolo_model_path(yolo_models_path)
+        yolo_model = YOLO(model_path)
+    return yolo_model
+
+class ThreadedYOLOCamera:
+    def __init__(self, src):
+        self.capture = cv2.VideoCapture(src)
+        self.frame = None
+        self.stopped = False
+        self.lock = threading.Lock()
+        threading.Thread(target=self.update, daemon=True).start()
+
+    def update(self):
+        while not self.stopped:
+            ret, frame = self.capture.read()
+            if not ret:
+                time.sleep(0.1)
+                continue
+            with self.lock:
+                self.frame = frame
+
+    def get_frame(self):
+        with self.lock:
+            return self.frame.copy() if self.frame is not None else None
+
+    def release(self):
+        self.stopped = True
+        self.capture.release()
+
+def save_object_detection(camera, detected_class, confidence, image_path=None, app_obj=None):
+    try:
+        # Gunakan app_obj untuk context
+        with app_obj.app_context():
+            tracking = Tracking(
+                camera_id=camera.id if camera else None,
+                detected_class=detected_class,
+                confidence=confidence,
+                timestamp=datetime.now(),
+                image_path=image_path
+            )
+            db.session.add(tracking)
+            db.session.commit()
+            print(f"✅ Data deteksi {detected_class} berhasil disimpan.")
+    except Exception as e:
+        if app_obj:
+            with app_obj.app_context():
+                db.session.rollback()
+        print(f"❌ Gagal menyimpan data deteksi: {e}")
+
+def detect_realtime_yolo(cam=None, static_folder=None, yolo_models_path=None, app_obj=None):
+    camera_url = cam.feed_src if cam else 0
+    camera = ThreadedYOLOCamera(camera_url)
+    detection_tracking_dir = os.path.join(static_folder, 'detection_tracking')
+    os.makedirs(detection_tracking_dir, exist_ok=True)
+
+    person_detected_since = None
+    min_duration = 20  # detik
+
+    model = get_yolo_model(yolo_models_path)
+
+        # ...existing code...
+    try:
+        while True:
+            frame = camera.get_frame()
+            if frame is None:
+                time.sleep(0.05)
+                continue
+
+            results = model.predict(frame, conf=0.6, stream=False, device='cpu')
+            detected_classes = set()
+            confidences = {'person': 0.0, 'tie': 0.0}
+
+            for r in results:
+                for box in r.boxes:
+                    cls = int(box.cls[0])
+                    conf = float(box.conf[0])
+                    class_name = yolo_class_names[cls]
+                    detected_classes.add(class_name)
+                    # Simpan confidence tertinggi untuk masing-masing class
+                    if conf > confidences.get(class_name, 0.0):
+                        confidences[class_name] = conf
+
+                    # Draw bounding box and label
+                    x1, y1, x2, y2 = map(int, box.xyxy[0])
+                    color = (0, 255, 0) if class_name == 'person' else (0, 0, 255)
+                    cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
+                    cv2.putText(frame, f"{class_name} {conf:.2f}", (x1, y1 - 10),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+
+            now = time.time()
+            # Deteksi hanya "person" tanpa "tie"
+            if 'person' in detected_classes and 'tie' not in detected_classes:
+                detected_class = 'person'
+                confidence = confidences['person']
+            # Deteksi hanya "tie" tanpa "person"
+            elif 'tie' in detected_classes and 'person' not in detected_classes:
+                detected_class = 'tie'
+                confidence = confidences['tie']
+            # Deteksi keduanya (opsional: bisa di-skip atau simpan sebagai kombinasi)
+            else:
+                detected_class = None
+                confidence = 0.0
+
+            if detected_class:
+                if person_detected_since is None:
+                    person_detected_since = now
+                elif now - person_detected_since >= min_duration:
+                    image_filename = f"{uuid.uuid4().hex}.jpg"
+                    image_path = os.path.join(detection_tracking_dir, image_filename)
+                    cv2.imwrite(image_path, frame)
+                    rel_image_path = f'static/detection_tracking/{image_filename}'
+                    save_object_detection(
+                        camera=cam,
+                        detected_class=detected_class,
+                        confidence=confidence,
+                        image_path=rel_image_path,
+                        app_obj=app_obj
+                    )
+                    person_detected_since = None
+            else:
+                person_detected_since = None
+
+            ret, jpeg = cv2.imencode('.jpg', frame)
+            if not ret:
+                continue
+            yield (b'--frame\r\n'
+                   b'Content-Type: image/jpeg\r\n\r\n' + jpeg.tobytes() + b'\r\n')
+    finally:
+        camera.release()
+
+@bp.route('/predict_yolo_video/<int:cam_id>')
+@login_required
+def predict_yolo_video(cam_id):
+    cam_settings = Camera_Settings.query.filter_by(id=cam_id, cam_is_active=True).first()
+    if not cam_settings:
+        return jsonify({'status': 'error', 'message': 'Camera not found'}), 404
+    static_folder = current_app.static_folder
+    yolo_models_path = current_app.config['YOLO_MODELS_PATH']
+    app_obj = current_app._get_current_object()  # <--- ambil objek Flask app
+    return Response(
+        detect_realtime_yolo(cam_settings, static_folder, yolo_models_path, app_obj),
+        mimetype='multipart/x-mixed-replace; boundary=frame'
+    )

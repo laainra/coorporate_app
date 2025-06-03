@@ -1,6 +1,6 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, current_app, send_file
 from flask_login import login_required, current_user, logout_user
-from app.models import Company, Divisions, Personnels, Personnel_Entries, Camera_Settings, Work_Timer # Import Work_Timer
+from app.models import Company, Divisions, Personnels, Personnel_Entries, Camera_Settings, Work_Timer, Tracking # Import Work_Timer
 from app import db # Import instance db
 from app.utils.decorators import admin_required # Decorators
 from datetime import datetime, date, timedelta # Import timedelta
@@ -471,6 +471,7 @@ def work_time_report():
                            filter_personnel_id=int(filter_personnel_id_str) if filter_personnel_id_str and filter_personnel_id_str.isdigit() else None
                            )
     
+
 @bp.route('/tracking_report')
 @login_required
 @admin_required
@@ -480,69 +481,56 @@ def tracking_report():
         flash("Admin account not linked to a company.", "danger")
         return redirect(url_for('auth.login'))
 
-    # Ambil daftar personel untuk filter dropdown di frontend
-    personnel_list = Personnels.query.filter_by(company_obj=company).all()
+    # Ambil daftar kamera tracking milik company
+    cameras = Camera_Settings.query.filter_by(company_obj=company, role_camera=Camera_Settings.ROLE_TRACKING).all()
+    camera_ids = [cam.id for cam in cameras]
 
-    # Ambil tanggal filter dari request, default ke hari ini
+    # Ambil tanggal filter dari request, jika tidak ada tampilkan semua data
     filter_date_str = request.args.get('filter_date')
+    tracking_query = Tracking.query.join(Camera_Settings).filter(
+        Tracking.camera_id.in_(camera_ids)
+    )
     if filter_date_str:
         try:
             filter_date = datetime.strptime(filter_date_str, "%Y-%m-%d").date()
+            tracking_query = tracking_query.filter(db.func.date(Tracking.timestamp) == filter_date)
         except ValueError:
-            flash("Invalid date format. Showing report for today.", "warning")
-            filter_date = date.today()
+            flash("Invalid date format. Showing all data.", "warning")
+            filter_date = None
     else:
-        filter_date = date.today()
+        filter_date = None  # Tidak ada filter, tampilkan semua data
 
-    # Logika untuk mendapatkan data tracking report
-    # Ini bisa melibatkan Work_Timer (aktivitas duduk, wajah terdeteksi)
-    # atau logika yang lebih kompleks dari kamera tracking (Counted_Instances)
-    # Untuk contoh ini, saya akan mengambil data Work_Timer yang paling relevan
+    tracking_query = tracking_query.order_by(Tracking.timestamp.desc())
 
-    tracking_data_query = db.session.query(
-        Work_Timer.datetime,
-        Work_Timer.type,
-        Work_Timer.timer, # Durasi timer (misal, detik)
-        Personnels.name.label('employee_name'),
-        Camera_Settings.cam_name.label('camera_name')
-    ).join(Personnels, Work_Timer.personnel_id == Personnels.id)\
-     .join(Camera_Settings, Work_Timer.camera_id == Camera_Settings.id)\
-     .filter(
-        cast(Work_Timer.datetime, Date) == filter_date,
-        Personnels.company_id == company.id,
-        Work_Timer.type.in_([Work_Timer.TYPE_SIT, Work_Timer.TYPE_FACE_DETECTED]) # Contoh filter type
-    ).order_by(Work_Timer.datetime.asc()).all()
-
-    # Anda mungkin perlu agregasi atau pemrosesan tambahan di sini
-    # Misalnya, menghitung total waktu duduk, total waktu wajah terdeteksi,
-    # atau log entri/keluar dari area tracking.
-
-    report_data = []
-    # Contoh sederhana: hanya menampilkan log individu
-    for entry in tracking_data_query:
-        report_data.append({
-            'datetime': entry.datetime.strftime('%Y-%m-%d %H:%M:%S'),
-            'employee_name': entry.employee_name,
-            'event_type': entry.type,
-            'duration_seconds': entry.timer,
-            'camera_name': entry.camera_name
+    tracking_data = []
+    for idx, entry in enumerate(tracking_query, start=1):
+        image_url = None
+        if entry.image_path:
+            if entry.image_path.startswith('static/'):
+                image_url = url_for('static', filename=entry.image_path[7:])
+            else:
+                image_url = url_for('static', filename=entry.image_path)
+        tracking_data.append({
+            'no': idx,
+            'timestamp': entry.timestamp.strftime('%Y-%m-%d %H:%M:%S'),
+            'detected_class': entry.detected_class,
+            'confidence': entry.confidence,
+            'image_url': image_url,
+            'camera_name': entry.camera.cam_name if entry.camera else '-',
         })
 
-    # Anda bisa memperluas ini untuk agregasi seperti 'work_time_report'
-    # For example, to aggregate total sit time or total face detected time per person per day.
-    # aggregated_tracking_data = defaultdict(lambda: {'total_sit_time': timedelta(), 'total_face_time': timedelta()})
-    # for entry in tracking_data_query:
-    #     if entry.type == Work_Timer.TYPE_SIT:
-    #         aggregated_tracking_data[entry.employee_name]['total_sit_time'] += timedelta(seconds=entry.timer)
-    #     elif entry.type == Work_Timer.TYPE_FACE_DETECTED:
-    #         aggregated_tracking_data[entry.employee_name]['total_face_time'] += timedelta(seconds=entry.timer)
-    # # Then format aggregated_tracking_data for the template.
+    return render_template(
+        'admin_panel/tracking_report.html',
+        tracking_data=tracking_data,
+        filter_date=filter_date_str if filter_date_str else '',
+        cameras=cameras
+    )
 
-    return render_template('admin_panel/tracking_report.html', {
-        'personnel_list': personnel_list, # Untuk filter dropdown
-        'tracking_report_data': report_data, # Data yang akan ditampilkan
-        'filter_date': filter_date.isoformat(), # Tanggal filter
-    })
+    # return render_template('admin_panel/tracking_report.html', **{
+    #     'personnel_list': personnel_list, # Untuk filter dropdown
+    #     'tracking_report_data': report_data, # Data yang akan ditampilkan
+    #     'filter_date': filter_date.isoformat(), # Tanggal filter
+    # })
 
 @bp.route('/presence-stream') # URL lebih baik menggunakan tanda hubung
 @login_required

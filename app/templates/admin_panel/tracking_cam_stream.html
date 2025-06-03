@@ -35,7 +35,7 @@
               <div class="spinner-border text-light loader" role="status" style="display: none;">
                 <span class="visually-hidden">Memuat Stream...</span>
               </div>
-              <img class="imgStream" data-stream-url-template="{{ url_for('stream.predict_video', cam_id=0).replace('0', 'CAM_ID') }}"
+              <img class="imgStream" data-stream-url-template="{{ url_for('stream.predict_yolo_video', cam_id=0).replace('0', 'CAM_ID') }}"
                 style="width: 100%; max-height: 60vh; object-fit: contain; display: none; border-radius: 0.25rem;" alt="Live Stream">
               <div class="stream-alert-box text-white p-3"></div>
             </div>
