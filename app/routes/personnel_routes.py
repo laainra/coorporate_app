@@ -38,20 +38,12 @@ def personnels():
 
     personnel_data = []
     for personnel in personnels_list:
-        # Fetch images for each personnel
         images = Personnel_Images.query.filter_by(personnel_obj=personnel).all()
 
-        # Check if images exist, otherwise use a default image path
         profile_image_url = 'static/img/user_default.png' # Default path relative to static
         if images:
-            # Assuming image_path in model is relative to UPLOAD_FOLDER
-            # UPLOAD_FOLDER = app/static/img, image_path = personnel_images/name/file.jpg
-            # So, f'img/{img.image_path}' might become f'{current_app.config["UPLOAD_FOLDER"]}/personnel_pics/{personnel.name}/{os.path.basename(img.image_path)}'
-            # Or, if image_path stored in DB is relative to app.static folder (e.g. img/personnel_images/...)
-            # We'll use url_for('static', filename=...) in template for consistency.
-            # Here, we store the full relative path from static folder for easier template rendering
             first_image_path = images[0].image_path # This path is relative to UPLOAD_FOLDER (e.g. personnel_images/Name/face_1_Name_1.jpg)
-            profile_image_url = f"img/{first_image_path}" # Assuming UPLOAD_FOLDER is app/static/img and image_path is relative to app/static/img
+            profile_image_url = f"img/{first_image_path}" 
             
         personnel_data.append({
             'id': personnel.id,
@@ -59,8 +51,7 @@ def personnels():
             'username': personnel.user_account.username if personnel.user_account else 'N/A',
             'email': personnel.user_account.email if personnel.user_account else 'N/A',
             'division': personnel.division_obj.name if personnel.division_obj else 'N/A',
-            # 'gender': personnel.gender, # Uncomment if you enable these fields in Personnel model
-            # 'employment_status': personnel.employment_status, # Uncomment if you enable these fields
+
             'profile_image': profile_image_url,
         })
     
@@ -90,6 +81,7 @@ def get_personnel(personnel_id):
     }
     return jsonify(data)
 
+# --- Menambahkan pegawai baru ---
 @bp.route('/add', methods=['POST'])
 @login_required
 @admin_required
@@ -100,51 +92,42 @@ def add_personnel():
         email = request.form.get('email')
         password = request.form.get('password')
         division_id = request.form.get('division')
-        # gender = request.form.get('gender') # Uncomment if used
-        # employment_status = request.form.get('employment_status') # Uncomment if used
 
         company = Company.query.filter_by(user_account=current_user).first()
         if not company:
             return jsonify({'status': 'error', 'message': 'Admin account not linked to a company'}), 403
 
         division = Divisions.query.get(division_id)
-        if not division or division.company_obj != company: # Ensure division belongs to the same company
+        if not division or division.company_obj != company: 
             return jsonify({'status': 'error', 'message': 'Invalid division selected'}), 400
 
-        # Ensure personnel name is unique within the company
         existing_personnel = Personnels.query.filter_by(name=name, company_obj=company).first()
         if existing_personnel:
             return jsonify({'status': 'error', 'message': 'Personnel with this name already exists in your company'}), 409
         
-        # Ensure username is unique globally for Users
         existing_user = Users.query.filter_by(username=username).first()
         if existing_user:
             return jsonify({'status': 'error', 'message': 'Username already taken'}), 409
-        
-        # Ensure email is unique globally for Users (if email is not null)
+
         if email and Users.query.filter_by(email=email).first():
             return jsonify({'status': 'error', 'message': 'Email already registered'}), 409
 
         try:
-            # Create CustomUser for personnel
             new_user = Users(username=username, email=email, role=Users.ROLE_EMPLOYEE)
             new_user.set_password(password)
             db.session.add(new_user)
-            db.session.flush() # Get ID for new_user
+            db.session.flush()
 
-            # Create personnel entry
+
             new_personnel = Personnels(
                 name=name,
                 user_id=new_user.id,
                 division_id=division.id,
                 company_id=company.id,
-                # gender=gender, # Uncomment if used
-                # employment_status=employment_status # Uncomment if used
             )
             db.session.add(new_personnel)
             db.session.commit()
 
-            # Create personnel image folder
             personnel_folder_path = os.path.join(get_personnel_folder_path(), name)
             os.makedirs(personnel_folder_path, exist_ok=True)
             
@@ -156,54 +139,45 @@ def add_personnel():
     
     return jsonify({'status': 'error', 'message': 'Invalid request method'}), 405
 
+# --- Mengedit pegawai ---
 @bp.route('/edit/<int:personnel_id>', methods=['POST'])
 @login_required
 @admin_required
 def edit_personnel(personnel_id):
     if request.method == 'POST':
         personnel = Personnels.query.get_or_404(personnel_id)
-        # Check ownership
         if personnel.company_obj != current_user.company_linked:
             return jsonify({'status': 'error', 'message': 'Unauthorized access to personnel'}), 403
             
-        old_name = personnel.name # Simpan nama lama untuk operasi folder
-        
+        old_name = personnel.name 
         name = request.form.get('name')
         username = request.form.get('username')
         email = request.form.get('email')
-        password = request.form.get('password') # Password baru (optional)
+        password = request.form.get('password') 
         division_id = request.form.get('division')
-        # gender = request.form.get('gender') # Uncomment if used
-        # employment_status = request.form.get('employment_status') # Uncomment if used
 
         division = Divisions.query.get(division_id)
         if not division or division.company_obj != personnel.company_obj:
             return jsonify({'status': 'error', 'message': 'Invalid division selected'}), 400
 
         try:
-            # Update CustomUser data
             user_account = personnel.user_account
             if user_account:
                 user_account.username = username if username else user_account.username
                 user_account.email = email if email else user_account.email
-                if password: # Update password only if provided
+                if password: 
                     user_account.set_password(password)
-                db.session.add(user_account) # Mark for update
+                db.session.add(user_account) 
 
-            # Update Personnel data
             personnel.name = name if name else personnel.name
             personnel.division_id = division.id
-            # personnel.gender = gender # Uncomment if used
-            # personnel.employment_status = employment_status # Uncomment if used
-            db.session.add(personnel) # Mark for update
+            db.session.add(personnel) 
             
-            # Rename personnel folder if name changed
             if old_name != personnel.name:
                 old_path = os.path.join(get_personnel_folder_path(), old_name)
                 new_path = os.path.join(get_personnel_folder_path(), personnel.name)
                 if os.path.exists(old_path):
                     shutil.move(old_path, new_path)
-                    # Update image_path in Personnel_Images to reflect new folder name
                     for img in Personnel_Images.query.filter_by(personnel_obj=personnel).all():
                         img.image_path = os.path.relpath(os.path.join(new_path, os.path.basename(img.image_path)), current_app.config['UPLOAD_FOLDER']).replace("\\", "/")
                         db.session.add(img)
@@ -216,27 +190,23 @@ def edit_personnel(personnel_id):
             return jsonify({'status': 'error', 'message': f'Failed to update personnel: {str(e)}'}), 500
     return jsonify({'status': 'error', 'message': 'Invalid request method'}), 405
 
-
+# --- Menghapus pegawai ---
 @bp.route('/delete/<int:personnel_id>', methods=['POST'])
 @login_required
 @admin_required
 def delete_personnel(personnel_id):
     personnel = Personnels.query.get_or_404(personnel_id)
-    # Check ownership
     if personnel.company_obj != current_user.company_linked:
         return jsonify({'status': 'error', 'message': 'Unauthorized access to personnel'}), 403
         
     try:
-        # Delete personnel folder and its contents
         personnel_folder_path = os.path.join(get_personnel_folder_path(), personnel.name)
         if os.path.exists(personnel_folder_path):
             shutil.rmtree(personnel_folder_path)
 
-        # Delete associated user account
         if personnel.user_account:
             db.session.delete(personnel.user_account)
 
-        # SQLAlchemy cascade takes care of Personnel_Images, Personnel_Entries, Work_Timer
         db.session.delete(personnel)
         db.session.commit()
         flash('Personnel deleted successfully!', 'success')

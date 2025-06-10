@@ -1,0 +1,160 @@
+# import cv2
+# import torch
+# import numpy as np
+# from facenet_pytorch import MTCNN, InceptionResnetV1
+# from torchvision import transforms
+# from scipy.spatial.distance import cosine
+# import os
+# import time
+# import joblib
+
+# # Load models
+# device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+# print(f"[INFO] Using device: {device}")
+
+# face_detector = MTCNN(keep_all=True, device=device)
+# resnet_embedder = InceptionResnetV1(pretrained='vggface2').eval().to(device)
+
+# # Set cosine threshold
+# COSINE_THRESHOLD = 0.6  # Lower = stricter
+# BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# embedding_file = os.path.join(BASE_DIR, 'app', 'static', 'trained_models', 'face_embeddings_mtcnn_resnet_torch.joblib')
+
+# # Load embeddings DB
+# def load_embeddings(embeddings_path=embedding_file):
+#     if os.path.exists(embeddings_path):
+#         print(f"[INFO] Loading embeddings from {embeddings_path}")
+#         return joblib.load(embeddings_path)
+#     else:
+#         print(f"[WARNING] Embedding DB not found at {embeddings_path}")
+#         return {"embeddings": [], "ids": []}
+
+# known_embeddings_db = load_embeddings()
+
+# # Preprocess face for model
+# preprocess = transforms.Compose([
+#     transforms.ToPILImage(),
+#     transforms.Resize((160, 160)),
+#     transforms.ToTensor(),
+#     transforms.Normalize(mean=[0.5]*3, std=[0.5]*3),
+# ])
+
+# # Recognize face
+# def recognize_face(face_tensor):
+#     known_embeddings = np.array(known_embeddings_db.get("embeddings", []))
+#     known_ids = known_embeddings_db.get("ids", [])
+
+#     if known_embeddings.size == 0:
+#         return "DB Empty", float('inf')
+
+#     face_tensor = face_tensor.unsqueeze(0).to(device)
+#     embedding = resnet_embedder(face_tensor).detach().cpu().numpy().flatten()
+#     distances = [cosine(embedding, known_embed) for known_embed in known_embeddings]
+    
+#     min_dist_idx = np.argmin(distances)
+#     min_dist = distances[min_dist_idx]
+    
+#     if min_dist < COSINE_THRESHOLD:
+#         return known_ids[min_dist_idx], min_dist
+#     else:
+#         return "Unknown", min_dist
+
+# # Video capture from webcam
+# cap = cv2.VideoCapture(0)
+# print("[INFO] Press 'q' to quit.")
+
+# # ### PERUBAHAN 1: Inisialisasi Ulang Counter Performa ###
+# # --- Performance Tracking Initialization ---
+# start_time = time.time()
+# total_frames_in_interval = 0
+# total_faces_detected_in_interval = 0
+# recognized_faces_in_interval = 0
+# # -----------------------------------------
+
+# while True:
+#     ret, frame = cap.read()
+#     if not ret:
+#         break
+
+#     total_frames_in_interval += 1
+#     current_time = time.time()
+
+#     rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+#     boxes, _ = face_detector.detect(rgb_frame)
+
+#     if boxes is not None:
+#         # ### PERUBAHAN 2: Logika Penghitungan Baru ###
+#         # Pindahkan semua penghitungan ke dalam loop ini
+#         for box in boxes:
+#             # Setiap kotak yang terdeteksi dihitung sebagai satu "wajah terdeteksi"
+#             total_faces_detected_in_interval += 1
+
+#             x1, y1, x2, y2 = [int(b) for b in box]
+#             face = frame[y1:y2, x1:x2]
+
+#             if face.size == 0:
+#                 continue
+
+#             try:
+#                 face_tensor = preprocess(face)
+#                 name, score = recognize_face(face_tensor)
+                
+#                 # Tambahkan ke counter jika berhasil dikenali
+#                 if name != "Unknown" and name != "DB Empty":
+#                     recognized_faces_in_interval += 1
+                
+#                 print(f"[DETECTED] {name} (cosine: {score:.3f})")
+
+#                 # Draw on frame
+#                 color = (0, 255, 0) if name != "Unknown" else (0, 0, 255)
+#                 cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
+#                 cv2.putText(frame, f"{name} ({score:.2f})", (x1, y1 - 10),
+#                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+#             except Exception as e:
+#                 print(f"[ERROR] Face processing failed: {e}")
+    
+#     # --- Performance Reporting Logic ---
+#     elapsed_time = current_time - start_time
+#     if elapsed_time >= 60.0: # Lapor setiap 1 menit
+#         # ### PERUBAHAN 3: Logika Pelaporan dan Persentase Baru ###
+        
+#         # Hitung jumlah wajah yang tidak dikenal
+#         unknown_faces_in_interval = total_faces_detected_in_interval - recognized_faces_in_interval
+        
+#         # Hitung persentase berdasarkan total wajah yang terdeteksi
+#         if total_faces_detected_in_interval > 0:
+#             recognized_percentage = (recognized_faces_in_interval / total_faces_detected_in_interval) * 100
+#             unknown_percentage = (unknown_faces_in_interval / total_faces_detected_in_interval) * 100
+#         else:
+#             recognized_percentage = 0
+#             unknown_percentage = 0
+
+#         print("\n" + "="*40)
+#         print(f"[PERFORMANCE LOG | 1 Menit Terakhir]")
+#         print(f"Total Frame Diproses: {total_frames_in_interval}")
+#         print(f"Total Wajah Terdeteksi: {total_faces_detected_in_interval}")
+#         print("-" * 20)
+#         print(f"  - Berhasil Dikenali: {recognized_faces_in_interval} ({recognized_percentage:.2f}%)")
+#         print(f"  - Tidak Dikenal: {unknown_faces_in_interval} ({unknown_percentage:.2f}%)")
+#         print("="*40 + "\n")
+
+#         # Reset untuk interval berikutnya
+#         start_time = time.time()
+#         total_frames_in_interval = 0
+#         total_faces_detected_in_interval = 0
+#         recognized_faces_in_interval = 0
+#     # -----------------------------------
+
+#     cv2.imshow("MTCNN + InceptionResNetV1", frame)
+#     if cv2.waitKey(1) & 0xFF == ord('q'):
+#         break
+
+# cap.release()
+# cv2.destroyAllWindows()
+
+from pygrabber.dshow_graph import FilterGraph
+
+graph = FilterGraph()
+cameras = graph.get_input_devices()
+for i, cam in enumerate(cameras):
+    print(f"Index {i}: {cam}")

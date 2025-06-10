@@ -1,3 +1,5 @@
+
+
 # coorporate_app/app/routes/settings_routes.py
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
 from flask_login import login_required, current_user
@@ -35,52 +37,38 @@ def get_display_name_and_related_objects(user):
 @login_required
 def profile():
     user = current_user
-    # Panggil helper di awal untuk GET dan juga untuk konteks jika POST gagal validasi
     display_name, company, personnel = get_display_name_and_related_objects(user)
     form_data_on_error = {}
 
     if request.method == 'POST':
-        form_data_on_error = request.form # Simpan data form untuk re-populasi jika error
+        form_data_on_error = request.form 
         
         validation_errors = []
         
-        # Variabel untuk menampung nilai yang akan diupdate (setelah validasi)
         username_to_update = None
         email_to_update = None
-        password_to_set = None # Akan berisi new_password jika valid
+        password_to_set = None 
         company_name_to_update = None
         personnel_name_to_update = None
-        # ... variabel lain untuk field spesifik peran
 
-        # --- FASE VALIDASI ---
-
-        # 1. Validasi Username
         submitted_username = request.form.get('username')
-        if submitted_username is not None: # Jika field username ada di form
+        if submitted_username is not None: 
             cleaned_username = submitted_username.strip()
             if not cleaned_username:
                 validation_errors.append(('Username cannot be empty.', 'danger'))
             elif cleaned_username != user.username:
-                # Opsional: Tambahkan validasi unik di sini
-                # existing_user = User.query.filter(User.id != user.id, User.username == cleaned_username).first()
-                # if existing_user:
-                #     validation_errors.append(('Username already taken.', 'danger'))
-                # else:
+    
                 username_to_update = cleaned_username
 
         # 2. Validasi Email
         submitted_email = request.form.get('email')
-        if submitted_email is not None: # Jika field email ada di form
+        if submitted_email is not None: 
             cleaned_email = submitted_email.strip()
             if not cleaned_email:
                 validation_errors.append(('Email cannot be empty.', 'danger'))
-            # Opsional: Tambahkan validasi format email di sini
+
             elif cleaned_email != user.email:
-                # Opsional: Tambahkan validasi unik di sini
-                # existing_email = User.query.filter(User.id != user.id, User.email == cleaned_email).first()
-                # if existing_email:
-                #     validation_errors.append(('Email already registered.', 'danger'))
-                # else:
+
                 email_to_update = cleaned_email
         
         # 3. Validasi Password
@@ -88,26 +76,25 @@ def profile():
         new_password = request.form.get('new_password')
         confirm_password = request.form.get('confirm_password')
 
-        if old_password: # Pengguna mengisi field password lama, menandakan niat mengubah password
+        if old_password:
             if not user.check_password(old_password):
                 validation_errors.append(('Old password is incorrect.', 'danger'))
             else:
-                # old_password benar. Sekarang cek new_password.
-                if new_password: # Jika new_password diisi
+
+                if new_password:
                     if not confirm_password:
                         validation_errors.append(('Please confirm your new password.', 'danger'))
                     elif new_password != confirm_password:
                         validation_errors.append(('New password and confirm password do not match.', 'danger'))
                     else:
-                        # Semua validasi untuk perubahan password berhasil
+                       
                         password_to_set = new_password
-                # else: new_password kosong. Sesuai permintaan, JANGAN tambahkan error
-                # "New password cannot be empty". Password tidak akan diubah.
+
         elif new_password or confirm_password: 
-            # old_password kosong, tapi new_password atau confirm_password diisi. Ini adalah error.
+          
             validation_errors.append(('Old password is required to set or change your password.', 'danger'))
         
-        # 4. Validasi Field Spesifik Peran
+
         if user.role == 'admin' and company:
             submitted_company_name = request.form.get('company_name')
             if submitted_company_name is not None: # Jika field ada di form
@@ -125,22 +112,19 @@ def profile():
                     validation_errors.append(('Personnel name cannot be empty.', 'danger'))
                 elif cleaned_personnel_name != personnel.name:
                     personnel_name_to_update = cleaned_personnel_name
-            # Tambahkan validasi untuk field employee lain jika ada
-
-        # --- AKHIR FASE VALIDASI ---
 
         if validation_errors:
             for msg, category in validation_errors:
                 flash(msg, category)
-            # display_name, company, personnel sudah diambil di awal
+
             return render_template('profile.html',
                                    user=user,
                                    display_name=display_name,
                                    company=company,
                                    personnel=personnel,
-                                   form_data=form_data_on_error) # Untuk mengisi ulang form
+                                   form_data=form_data_on_error) 
         else:
-            # --- FASE PENERAPAN PERUBAHAN (Jika tidak ada error validasi) ---
+
             db_commit_needed = False
 
             if username_to_update is not None:
@@ -151,7 +135,7 @@ def profile():
                 user.email = email_to_update
                 db_commit_needed = True
 
-            if password_to_set is not None: # Hanya set password jika sudah divalidasi dan siap
+            if password_to_set is not None: 
                 user.set_password(password_to_set)
                 db_commit_needed = True
 
@@ -162,7 +146,7 @@ def profile():
             if personnel_name_to_update is not None and personnel:
                 personnel.name = personnel_name_to_update
                 db_commit_needed = True
-            # Terapkan perubahan untuk field employee lain jika ada
+
 
             if db_commit_needed:
                 try:
@@ -171,13 +155,12 @@ def profile():
                 except Exception as e:
                     db.session.rollback()
                     flash(f'Error updating profile: {str(e)}', 'danger')
-                    # Log error: current_app.logger.error(f"Profile update error for {user.username}: {e}")
+
             else:
                 flash('No changes were made to the profile.', 'info')
             
-            return redirect(url_for('settings.profile')) # Ganti 'settings.profile' dengan nama route yang benar
+            return redirect(url_for('settings.profile')) 
 
-    # --- Logika untuk GET Request ---
     return render_template('profile.html',
                            user=user,
                            display_name=display_name,

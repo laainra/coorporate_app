@@ -1,0 +1,2 @@
+Timestamp,Camera URL,Total Frames Processed,Frames with Face Detected,Frame Detection Accuracy (%),Recognized Faces,Recognized Faces (%),Unknown Faces,Unknown Faces (%)
+2025-06-10_09-59-28,rtsp://admin:admin@192.168.1.19:8554/Streaming/Channels/102,111,91.74,10,8.26

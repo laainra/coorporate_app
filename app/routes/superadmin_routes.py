@@ -6,32 +6,61 @@ from app import db # Import instance db
 from app.utils.decorators import superadmin_required # Decorators
 from datetime import datetime, timedelta
 from sqlalchemy import func, cast, Date # Untuk fungsi database
-
+import pandas as pd # Untuk manipulasi data dan charting
 bp = Blueprint('superadmin', __name__, template_folder='../templates/superadmin')
-
 @bp.route('/dashboard')
 @login_required
 @superadmin_required
 def dashboard():
     today = datetime.utcnow()
-    last_7_days = today - timedelta(days=7)
-    last_30_days = today - timedelta(days=30)
+    last_7_days_ago = today - timedelta(days=7)
+    last_30_days_ago = today - timedelta(days=30)
 
     total_companies = Company.query.count()
-    companies_last_7_days = Company.query.filter(Company.createdAt >= last_7_days).count()
-    companies_last_30_days = Company.query.filter(Company.createdAt >= last_30_days).count()
+    companies_last_7_days = Company.query.filter(Company.createdAt >= last_7_days_ago).count()
+    companies_last_30_days = Company.query.filter(Company.createdAt >= last_30_days_ago).count()
 
     total_accounts = Users.query.count()
-    accounts_last_7_days = Users.query.filter(Users.createdAt >= last_7_days).count() # date_joined -> createdAt
-    accounts_last_30_days = Users.query.filter(Users.createdAt >= last_30_days).count()
+    accounts_last_7_days = Users.query.filter(Users.createdAt >= last_7_days_ago).count()
+    accounts_last_30_days = Users.query.filter(Users.createdAt >= last_30_days_ago).count()
 
     total_employees = Personnels.query.count()
-    employees_last_7_days = Personnels.query.filter(Personnels.createdAt >= last_7_days).count()
-    employees_last_30_days = Personnels.query.filter(Personnels.createdAt >= last_30_days).count()
+    employees_last_7_days = Personnels.query.filter(Personnels.createdAt >= last_7_days_ago).count()
+    employees_last_30_days = Personnels.query.filter(Personnels.createdAt >= last_30_days_ago).count()
 
-    # Fetch all companies for the list (if used directly on dashboard, otherwise move to company_list)
-    companies_list = Company.query.all()
+    start_date = today - timedelta(days=29)
 
+    def get_daily_cumulative_data(model, start_date):
+        daily_counts = db.session.query(
+            func.date(model.createdAt).label('date'),
+            func.count(model.id).label('count')
+        ).filter(model.createdAt >= start_date).group_by('date').order_by('date').all()
+        
+        if daily_counts:
+            df = pd.DataFrame(daily_counts, columns=['date', 'count'])
+            df['date'] = pd.to_datetime(df['date'])
+            df = df.set_index('date')
+            full_date_range = pd.date_range(start=start_date.date(), end=today.date(), freq='D')
+            df = df.reindex(full_date_range, fill_value=0)
+
+            cumulative_series = df['count'].cumsum()
+            return cumulative_series
+        return pd.Series()
+
+    company_growth = get_daily_cumulative_data(Company, start_date)
+    user_growth = get_daily_cumulative_data(Users, start_date)
+    employee_growth = get_daily_cumulative_data(Personnels, start_date)
+
+
+    chart_data = {
+        # Format label tanggal menjadi "Bulan Hari", contoh: "Jun 09"
+        'labels': [d.strftime('%b %d') for d in company_growth.index],
+        'company_series': company_growth.tolist(),
+        'user_series': user_growth.tolist(),
+        'employee_series': employee_growth.tolist()
+    }
+    
+    # Kumpulkan semua data untuk dikirim ke template
     context = {
         'total_companies': total_companies,
         'companies_last_7_days': companies_last_7_days,
@@ -42,8 +71,9 @@ def dashboard():
         'total_employees': total_employees,
         'employees_last_7_days': employees_last_7_days,
         'employees_last_30_days': employees_last_30_days,
-        'companies': companies_list,
+        'chart_data': chart_data  # Tambahkan data chart ke context
     }
+    
     return render_template('superadmin/dashboard.html', **context)
 
 @bp.route('/company')
@@ -56,14 +86,12 @@ def company():
 
     companies_query = Company.query
     if search_term:
-        companies_query = companies_query.filter(Company.name.ilike(f'%{search_term}%')) # ilike for case-insensitive LIKE
+        companies_query = companies_query.filter(Company.name.ilike(f'%{search_term}%')) 
 
-    # Implement pagination manually or use Flask-SQLAlchemy-Pagination extension
-    # For now, a simple slice
     total_count = companies_query.count()
     companies = companies_query.offset((page - 1) * entries_per_page).limit(entries_per_page).all()
     
-    # Calculate total pages
+
     total_pages = (total_count + entries_per_page - 1) // entries_per_page
 
     context = {
@@ -113,20 +141,17 @@ def add_company():
         if not all([company_name, username, password]):
             return jsonify({'success': False, 'message': 'All fields are required.'}), 400
 
-        # Check for existing username or email
         if Users.query.filter_by(username=username).first():
             return jsonify({'success': False, 'message': 'Username already exists.'}), 409
         if email and Users.query.filter_by(email=email).first():
             return jsonify({'success': False, 'message': 'Email already exists.'}), 409
 
         try:
-            # Create CustomUser (admin role)
             new_user = Users(username=username, email=email, role=Users.ROLE_ADMIN)
-            new_user.set_password(password) # Hash password
+            new_user.set_password(password) 
             db.session.add(new_user)
-            db.session.flush() # Commit user to get its ID before linking to company
+            db.session.flush() 
 
-            # Create Company and link to user
             new_company = Company(name=company_name, user_id=new_user.id)
             db.session.add(new_company)
             db.session.commit()
@@ -144,28 +169,23 @@ def add_company():
 def edit_company(company_id):
     if request.method == "POST":
         company = Company.query.get_or_404(company_id)
-        # Periksa apakah superadmin yang login punya izin untuk mengedit company ini
-        # (meskipun superadmin_required sudah cukup, bisa ada logic tambahan jika perlu)
-
         company_name = request.form.get('company_name')
         username = request.form.get('username')
         email = request.form.get('email')
-        password = request.form.get('password') # Password baru
+        password = request.form.get('password') 
 
         try:
-            # Update Company name
             company.name = company_name if company_name else company.name
 
-            # Update associated user details
-            user_account = company.user_account # Access linked CustomUser
+            user_account = company.user_account 
             if user_account:
                 user_account.username = username if username else user_account.username
                 user_account.email = email if email else user_account.email
-                if password: # Update password only if provided
+                if password:
                     user_account.set_password(password)
-                db.session.add(user_account) # Mark for update
+                db.session.add(user_account) 
             
-            db.session.add(company) # Mark for update
+            db.session.add(company) 
             db.session.commit()
             flash('Company updated successfully!', 'success')
             return jsonify({'success': True, 'message': 'Company updated successfully!'})
@@ -182,8 +202,6 @@ def delete_company(company_id):
     if request.method == "POST":
         company = Company.query.get_or_404(company_id)
         try:
-            # SQLAlchemy CASCADE handles deletion of related entities if configured
-            # Delete the associated user account if it exists
             if company.user_account:
                 db.session.delete(company.user_account)
             db.session.delete(company)

@@ -2,18 +2,15 @@
 {% block title %}Dashboard Admin{% endblock %}
 
 {% block content %}
-{# {% csrf_token %} is a Django tag and is not needed here in Flask. CSRF token is handled via meta tag in base.html and JavaScript. #}
 <div class="content">
     <div class="container-xl">
-    <div class="header mb-4">
+        <div class="header mb-4">
             <div class="row align-items-center justify-content-between gx-4">
-                <div class="col-auto"> {# col-auto by default aligns to start (left) #}
+                <div class="col-auto">
                     <div class="page-pretitle">Overview</div>
                     <h2 class="page-title">Dashboard</h2>
                 </div>
-                {# col-auto ms-auto d-print-none sudah benar untuk mendorong ke kanan #}
                 <div class="col-auto ms-auto d-print-none">
-                    {# Tidak ada tombol aksi di sini untuk dashboard admin, jadi biarkan kosong atau hapus div ini jika tidak ada kontennya #}
                 </div>
             </div>
         </div>
@@ -22,16 +19,15 @@
             <div class="col-sm-7">
                 <div class="card">
                     <div class="card-header border-0">
-                        <h3 class="card-title">Employee Stats</h3>
+                        <h3 class="card-title">Employee Stats (Last 30 Days)</h3> {# Changed title for clarity #}
                     </div>
                     <div class="card-body">
-                        <div class="mb-3 d-flex align-items-center"> {# Tambahkan d-flex align-items-center untuk layout horizontal #}
-                            <div style="max-width: 250px;" class="me-2"> {# mr-2 changed to me-2 #}
+                        <div class="mb-3 d-flex align-items-center">
+                            <div style="max-width: 250px;" class="me-2">
                                 <div class="input-icon">
-                                    <input id="calendar-range" type="date" class="form-control" placeholder="Select a date range" />
+                                    <input id="calendar-range" type="text" class="form-control" placeholder="Select a date range" />
                                 </div>
                             </div>
-                            {# Tambahkan div kosong dengan ms-auto jika ada elemen lain yang perlu didorong ke kanan #}
                             <div class="ms-auto"></div>
                         </div>
                         <div id="chart-bar"></div>
@@ -56,26 +52,7 @@
                         <h3 class="card-title">Top Employee</h3>
                     </div>
                     <div class="card-body">
-                        <div class="d-flex mb-3">
-                            <div style="max-width: 200px;" class="me-2"> {# mr-2 changed to me-2 #}
-                                <label for="month-select" class="form-label">Month</label>
-                                <select id="month-select" name="month" class="form-select"></select>
-                            </div>
-                            <div style="max-width: 200px;" class="me-2"> {# mr-2 changed to me-2 #}
-                                <label for="year-select" class="form-label">Year</label>
-                                <select id="year-select" name="year" class="form-select"></select>
-                            </div>
-                            <div style="max-width: 200px;" class="me-2"> {# mr-2 changed to me-2 #}
-                                <label for="performance-select" class="form-label">Performance</label>
-                                <select id="performance-select" name="performance" class="form-select">
-                                    <option value="ontime" selected>Most On Time</option>
-                                    <option value="late">Most Late</option>
-                                    <option value="hardworking">Hardest Worker</option>
-                                </select>
-                            </div>
-                            {# Jika ada elemen lain yang perlu didorong ke kanan, gunakan ms-auto di sini #}
-                            <div class="ms-auto"></div>
-                        </div>
+        
                         <div class="table-responsive w-100">
                             <table class="table card-table table-vcenter text-nowrap datatable">
                                 <thead>
@@ -88,7 +65,7 @@
                                     </tr>
                                 </thead>
                                 <tbody>
-                       {% for employee in top_employees %}
+                                {% for employee in top_employees %}
                                     <tr>
                                         <td>{{ loop.index }}</td>
                                         <td><span class="text-muted">{{ employee.id }}</span></td>
@@ -96,11 +73,11 @@
                                         <td>{{ employee.division }}</td>
                                         <td>{{ employee.total_ontime }}</td>
                                     </tr>
-                                    {% else %}
+                                {% else %}
                                     <tr>
                                         <td colspan="5" class="text-center">No top employees found.</td>
                                     </tr>
-                                    {% endfor %}
+                                {% endfor %}
                                 </tbody>
                             </table>
                         </div>
@@ -111,88 +88,82 @@
     </div>
 </div>
 
-{# JS Dependencies #}
-{# Pastikan path relatif ke app/static/ sudah benar, jika tidak, tambahkan 'Dashboard/' #}
-{# Contoh: 'Dashboard/dist/libs/bootstrap/dist/js/bootstrap.bundle.min.js' #}
-{# Saya asumsikan sudah ada di base.html atau path yang benar. #}
-{# Jika Anda sudah memuat ini di base.html, jangan duplikasi di sini. #}
-
 <script>
     document.addEventListener("DOMContentLoaded", function () {
-        flatpickr(document.getElementById('calendar-range'), { mode: "range" });
+        // companyId is no longer needed for the bar chart if not making API calls
+        // const companyId = {{ company.id|tojson|safe }};
 
-        // Parse summary from context or fallback
-        // Pastikan summary memiliki nilai default yang aman jika tidak ada data
-        const summary = {{ summary|tojson|safe }}; // Menggunakan tojson filter untuk data JSON
-        // Pastikan juga 'summary' dari view Anda memiliki keys 'ontime' dan 'late'
+        // Initialize Flatpickr for the date range
+        const calendarRangeInput = document.getElementById('calendar-range');
+        const fp = flatpickr(calendarRangeInput, {
+            mode: "range",
+            dateFormat: "Y-m-d", // Ensure date format matches backend expectation
+            // Use the pre-calculated date strings here!
+            defaultDate: ["{{ default_start_date_str }}", "{{ default_end_date_str }}"], // Use default_end_date_str
+            // If you want the bar chart to update on date change, you would need to re-introduce an API call here
+            // or reload the page with new query parameters.
+            onChange: function(selectedDates, dateStr, instance) {
+                // For direct query approach, changing date here won't dynamically update the bar chart
+                // without a page reload or a new AJAX call.
+                // You could uncomment the line below if you want to reload the page with the new date range
+                // window.location.href = `/dashboard?start_date=${selectedDates[0].toISOString().slice(0,10)}&end_date=${selectedDates[1].toISOString().slice(0,10)}`;
+            }
+        });
 
-        // Donut Chart
+        // Data from backend for Donut Chart
+        const summary = {{ summary|tojson|safe }} || { ontime: 0, late: 0, leave: 0 };
+
+        // Donut Chart: Today Employee Stats
         const donutChart = new ApexCharts(document.getElementById('chart-donut'), {
             chart: {
                 type: "donut",
-                height: 240,
+                height: 280,
                 animations: { enabled: true },
+                sparkline: { enabled: true }
             },
-            series: [summary.ontime || 0, summary.late || 0],
-            labels: ["Ontime", "Late"],
-            colors: ["#206bc4", "#cd201f"],
-            legend: { show: true },
+            series: [summary.ontime, summary.late, summary.leave],
+            labels: ["Tepat Waktu", "Telat", "Izin/Cuti"],
+            colors: ["#206bc4", "#cd201f", "#ff922b"],
+            legend: { show: true, position: 'bottom' },
             tooltip: { fillSeriesColor: false },
+            dataLabels: { enabled: true },
         });
         donutChart.render();
 
-        // Bar Chart
-        const barChart = new ApexCharts(document.getElementById('chart-bar'), {
+        // Bar Chart Initialization - Directly use data from Flask
+        const barChartData = {{ bar_chart_data|tojson|safe }};
+
+        let barChart = new ApexCharts(document.getElementById('chart-bar'), {
             chart: {
                 type: "bar",
-                height: 250,
+                height: 280,
                 stacked: true,
             },
-            series: [
-                {
-                    name: "Ontime",
-                    data: [10, 15, 20, 25, 30] // Data dummy. Anda perlu mengisi ini dari backend
-                },
-                {
-                    name: "Late",
-                    data: [5, 10, 7, 8, 6] // Data dummy. Anda perlu mengisi ini dari backend
-                }
-            ],
+            series: barChartData.series, // Use data directly
             xaxis: {
-                categories: ['Alice', 'Bob', 'Charlie', 'David', 'Eve'], // Data dummy. Anda perlu mengisi ini dari backend
+                categories: barChartData.categories, // Use data directly
+                labels: { style: { fontSize: '12px' } }
+            },
+            yaxis: {
+                title: { text: 'Jumlah Kehadiran' }
             },
             colors: ["#206bc4", "#cd201f"],
-            legend: { show: true },
-            tooltip: { shared: true },
+            legend: { show: true, position: 'top' },
+            tooltip: { shared: true, intersect: false },
+            plotOptions: {
+                bar: {
+                    horizontal: false,
+                    columnWidth: '50%',
+                },
+            },
+            dataLabels: { enabled: false },
         });
         barChart.render();
+
+        // The updateBarChart function and initial API call are removed
+        // because the data is loaded directly from Flask.
+        // If you want dynamic updates, you need to re-implement the AJAX logic.
     });
 </script>
 
-<script>
-    document.addEventListener("DOMContentLoaded", function () {
-        const monthSelect = document.getElementById('month-select');
-        const yearSelect = document.getElementById('year-select');
-        const currentYear = new Date().getFullYear();
-
-        const months = [
-            'January', 'February', 'March', 'April', 'May', 'June',
-            'July', 'August', 'September', 'October', 'November', 'December'
-        ];
-
-        months.forEach((month, i) => {
-            const option = document.createElement('option');
-            option.value = i + 1;
-            option.text = month;
-            monthSelect.appendChild(option);
-        });
-
-        for (let y = currentYear - 5; y <= currentYear + 5; y++) {
-            const option = document.createElement('option');
-            option.value = y;
-            option.text = y;
-            yearSelect.appendChild(option);
-        }
-    });
-</script>
 {% endblock %}

@@ -52,6 +52,7 @@ Presence Camera
                             <thead>
                                 <tr>
                                     <th class="w-1">No.</th>
+                                    <th class="w-1">CAM ID</th>
                                     <th>Camera Name</th>
                                     <th>Source</th>
                                     <th>Attendance Start Time</th>
@@ -66,6 +67,7 @@ Presence Camera
                                     {% for cam in cams %}
                                     <tr data-cam-id="{{ cam.id }}" data-cam-name="{{ cam.cam_name | lower }}">
                                         <td>{{ loop.index }}</td>
+                                        <td>{{ cam.id }}</td>
                                         <td>{{ cam.cam_name }}</td>
                                         <td class="text-center">
                                             {% if cam.feed_src == '0' %}

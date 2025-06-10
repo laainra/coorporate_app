@@ -27,60 +27,7 @@ def format_time(time_str, default_time=None):
         print(f"Invalid time format: {time_str}. Using default.")
         return default_time # Return existing default on error
 
-
-# @bp.route('/')
-# @login_required
-# @admin_required
-# def camera():
-#     company = Company.query.filter_by(user_account=current_user).first()
-#     if not company:
-#         flash("Admin account not linked to a company.", "danger")
-#         return redirect(url_for('auth.login'))
-    
-#     # Retrieve all cameras for the current company
-#     cams = Camera_Settings.query.filter_by(company_obj=company).all()
-
-#     # Determine active_cam from session or first available camera
-#     active_cam_id = session.get('cam_id')
-#     active_cam = None
-#     if active_cam_id:
-#         active_cam = Camera_Settings.query.get(active_cam_id)
-#         if not active_cam or active_cam.company_obj != company: # Validate ownership
-#             active_cam = None
-#             session.pop('cam_id', None) # Clear invalid session cam_id
-    
-#     if not active_cam and cams:
-#         active_cam = cams[0] # Pick the first camera if no active_cam in session or it's invalid
-#         session['cam_id'] = active_cam.id
-
-#     # Try to get a frame for display size, if active_cam is valid and active
-#     frame_shape = (0.1, 0.1) # Default
-#     toggle_settings = session.get('toggle_polygon', False) # State of settings panel
-
-#     if active_cam and active_cam.cam_is_active:
-#         # Attempt to open the camera to get frame shape
-#         cap = get_camera_instance(int(active_cam.feed_src) if active_cam.feed_src.isdigit() else active_cam.feed_src)
-#         if cap and cap.isOpened():
-#             ret, frame = cap.read()
-#             if ret:
-#                 frame_shape = (frame.shape[0], frame.shape[1])
-#             # Do NOT release cap here, as it's managed by get_camera_instance cache.
-#             # It will be released when stop_stream is called or app exits.
-#         else:
-#             flash(f"Warning: Camera '{active_cam.cam_name}' cannot be opened. Check source/activity.", "warning")
-#             # Optionally set cam_is_active to False in DB if it can't open
-#             active_cam.cam_is_active = False
-#             db.session.commit()
-
-#     # Pass data to template
-#     return render_template('admin_panel/camera.html', 
-#                            Cams=cams,
-#                            Active_Cam=active_cam,
-#                            Frame_X=frame_shape[1], # Width
-#                            Frame_Y=frame_shape[0], # Height
-#                            Toggle_Settings=toggle_settings,
-#                            Page="Camera")
-
+# ---
 @bp.route('/add', methods=['GET', 'POST'])
 @login_required
 @admin_required
@@ -231,19 +178,15 @@ def save_coordinates():
 # ====================================================================
 # Specific Add/Edit routes for Tracking and Presence Cameras (from your Django code)
 # ====================================================================
-
+# ---- Menambahkan kamera untuk Tracking ----
 @bp.route('/add_tracking_camera', methods=['GET', 'POST'])
 @login_required
-# @admin_required # Ensure this decorator is correctly defined and working
 def add_tracking_camera():
-    # Use company_obj to avoid confusion with the query object
     company_obj = Company.query.filter_by(user_id=current_user.id).first()
     
     if not company_obj:
-        # For AJAX POST requests, return a JSON error
         if request.method == 'POST':
-            return jsonify({'status': 'error', 'message': 'Admin account not linked to a company.'}), 403 # Forbidden or 400 Bad Request
-        # For GET requests or traditional form submissions (not via this JS fetch)
+            return jsonify({'status': 'error', 'message': 'Admin account not linked to a company.'}), 403 
         flash("Admin account not linked to a company.", "danger")
         return redirect(url_for('auth.login')) 
     
@@ -258,11 +201,6 @@ def add_tracking_camera():
         ciggerate_detection = request.form.get('ciggerate_detection') == 'on'
         sit_detection = request.form.get('sit_detection') == 'on'
         
-        # Add other form fields from your model here, e.g.
-        # gender_detection = request.form.get('gender_detection') == 'on'
-        # face_detection = request.form.get('face_detection', 'on') == 'on' # Default if needed
-        # ... and coordinates, cam_start, cam_stop etc.
-
         if not cam_name or not camera_type:
             return jsonify({'status': 'error', 'message': 'Camera name and type are required.'}), 400
 
@@ -280,62 +218,55 @@ def add_tracking_camera():
             new_cam = Camera_Settings(
                 cam_name=cam_name,
                 feed_src=feed_src_to_store,
-                role_camera=Camera_Settings.ROLE_TRACKING, # Ensure this constant exists
-                company_id=company_obj.id, # Correctly use the ID of the fetched object
+                role_camera=Camera_Settings.ROLE_TRACKING, 
+                company_id=company_obj.id,
                 cam_is_active=True,
                 uniform_detection=uniform_detection,
                 id_card_detection=id_card_detection,    
                 shoes_detection=shoes_detection,
                 ciggerate_detection=ciggerate_detection,
                 sit_detection=sit_detection
-                # ... add other fields to the constructor:
-                # gender_detection=gender_detection,
-                # face_detection=face_detection,
-                # x1=request.form.get('x1', 0, type=int), ... etc.
+        
             )
             db.session.add(new_cam)
             db.session.commit()
             
-            # Return JSON response for successful AJAX POST
+
             return jsonify({
                 'status': 'success',
                 'message': 'Tracking camera added successfully!',
-                'redirect_url': url_for('admin.tracking_cam') # Provide URL for client-side redirect
-            }), 200 # HTTP 200 OK (or 201 Created)
+                'redirect_url': url_for('admin.tracking_cam') 
+            }), 200 
 
         except Exception as e:
             db.session.rollback()
-            # current_app.logger.error(f"Error adding camera: {e}", exc_info=True) # Good for server logs
-            return jsonify({'status': 'error', 'message': f'An error occurred: {str(e)}'}), 500 # Internal Server Error
+            return jsonify({'status': 'error', 'message': f'An error occurred: {str(e)}'}), 500 
             
-    # For GET request, render the template as before
     return render_template('admin_panel/tracking_cam.html', company=company_obj)
-
+# ---- Mengedit kamera untuk Tracking ----
 @bp.route('/edit_tracking_camera/<int:cam_id>', methods=['GET', 'POST'])
 @login_required
 @admin_required
 def edit_tracking_camera(cam_id):
     camera = Camera_Settings.query.get_or_404(cam_id)
 
-    # Asumsi company_obj dan company_linked adalah atribut/relasi yang valid
-    # Sesuaikan .id jika perlu
     if not hasattr(camera, 'company_obj') or not hasattr(current_user, 'company_linked') or \
        camera.company_obj.id != current_user.company_linked.id:
         if request.method == 'POST':
             return jsonify({'status': 'error', 'message': 'Unauthorized access to camera settings.'}), 403
         else:
             flash("Unauthorized access to camera settings.", "danger")
-            return redirect(url_for('admin.tracking_cam')) # Sesuaikan dengan route daftar kamera Anda
+            return redirect(url_for('admin.tracking_cam')) 
 
     if camera.role_camera != Camera_Settings.ROLE_TRACKING:
         if request.method == 'POST':
             return jsonify({'status': 'error', 'message': 'This is not a tracking camera.'}), 400
         else:
             flash("This is not a tracking camera.", "warning")
-            return redirect(url_for('admin.tracking_cam')) # Sesuaikan
+            return redirect(url_for('admin.tracking_cam'))
 
     if request.method == 'POST':
-        # Kumpulkan error validasi
+
         error_messages = []
 
         camera.cam_name = request.form.get('cam_name', camera.cam_name)
@@ -345,45 +276,16 @@ def edit_tracking_camera(cam_id):
         camera.shoes_detection = request.form.get('shoes_detection') == 'on'
         camera.ciggerate_detection = request.form.get('ciggerate_detection') == 'on'
         camera.sit_detection = request.form.get('sit_detection') == 'on'
-        # camera.cam_is_active = request.form.get('cam_is_active') == 'on'
-
-        # new_camera_type = request.form.get('camera_type')
-        # new_feed_src_rtsp = request.form.get('feed_src_rtsp')
-        # new_feed_src_to_store = camera.feed_src # Default ke nilai lama jika tidak ada perubahan
-
-        # if not new_camera_type:
-        #     error_messages.append('Camera type is required.')
-        # elif new_camera_type == 'webcam':
-        #     new_feed_src_to_store = '0'
-        # elif new_camera_type == 'cctv':
-        #     if not new_feed_src_rtsp:
-        #         error_messages.append('RTSP URL is required for CCTV type.')
-        #     else:
-        #         new_feed_src_to_store = new_feed_src_rtsp
-        # else:
-        #     error_messages.append('Invalid camera type selected.')
-        
-        # if error_messages:
-        #     return jsonify({'status': 'error', 'message': " ".join(error_messages)}), 400
-
-        # Jika ada perubahan pada feed_src, lakukan release instance lama jika perlu
-        # if camera.feed_src != new_feed_src_to_store:
-        #     if camera.feed_src: # Jika ada sumber feed lama
-        #         # Pastikan fungsi ini ada dan berfungsi dengan benar
-        #         # release_camera_instance(camera.feed_src) 
-        #         pass # Placeholder jika release_camera_instance tidak didefinisikan
-        #     camera.feed_src = new_feed_src_to_store
-        
+        camera.cam_is_active = True
+   
         try:
             db.session.commit()
             return jsonify({'status': 'success', 'message': 'Tracking camera updated successfully!'}), 200
         except Exception as e:
             db.session.rollback()
-            # Log error e
-            print(f"Error updating camera: {e}") # Untuk debugging
+            print(f"Error updating camera: {e}") 
             return jsonify({'status': 'error', 'message': f'Failed to update camera. {str(e)}'}), 500
     
-    # Untuk GET request (tetap seperti semula, menampilkan halaman HTML)
     current_camera_type = 'webcam' if camera.feed_src == '0' else 'cctv'
     current_feed_src_rtsp = camera.feed_src if current_camera_type == 'cctv' else ''
     return render_template('admin_panel/tracking_cam.html', 
@@ -391,30 +293,24 @@ def edit_tracking_camera(cam_id):
                            current_camera_type=current_camera_type,
                            current_feed_src_rtsp=current_feed_src_rtsp,
                            form_data=request.form if request.method == 'POST' else None)
-    
+# --- Menambahkan kamera untuk Presence ---
 @bp.route('/add_presence_camera', methods=['GET', 'POST'])
 @login_required
 @admin_required
 def add_presence_camera():
-    # Adjust this query based on your actual Company-User relationship
-    # Option 1: If User has a direct company_id or company relationship
-    # company = current_user.company 
-    # Option 2: If Company has a user_account_id linking to User.id
-    company = Company.query.filter_by(user_id=current_user.id).first() # Example, adjust!
-    # Option 3: If Company model has a relationship like 'user_accounts' (many-to-many or one-to-many)
-    # company = Company.query.filter(Company.user_accounts.any(id=current_user.id)).first()
 
+    company = Company.query.filter_by(user_id=current_user.id).first() # Example, adjust!
 
     if not company:
-        if request.method == 'POST': # AJAX request
+        if request.method == 'POST': 
             return jsonify({'status': 'error', 'message': 'Admin account not linked to a company.'}), 403
         flash("Admin account not linked to a company.", "danger")
-        return redirect(url_for('auth.login')) # Adjust if auth blueprint is different
+        return redirect(url_for('auth.login')) 
 
     if request.method == 'POST':
         cam_name = request.form.get('cam_name')
-        camera_type = request.form.get('camera_type') # IMPORTANT: Ensure your ADD modal sends this
-        feed_src_rtsp = request.form.get('feed_src_rtsp') # IMPORTANT: Ensure your ADD modal sends this if CCTV
+        camera_type = request.form.get('camera_type') 
+        feed_src_rtsp = request.form.get('feed_src_rtsp') 
         attendance_time_start_str = request.form.get('attendance_time_start')
         attendance_time_end_str = request.form.get('attendance_time_end')
         leaving_time_start_str = request.form.get('leaving_time_start')
@@ -436,7 +332,7 @@ def add_presence_camera():
 
         feed_src_to_store = None
         if camera_type == 'webcam':
-            feed_src_to_store = '0' # Convention for webcam
+            feed_src_to_store = '0' 
         elif camera_type == 'cctv':
             if not feed_src_rtsp:
                 return jsonify({'status': 'error', 'message': 'RTSP URL is required for CCTV type.'}), 400
@@ -451,63 +347,54 @@ def add_presence_camera():
             leaving_time_end = format_time(leaving_time_end_str).strftime('%H:%M:%S')
         except ValueError as e:
             return jsonify({'status': 'error', 'message': f'Invalid time format. Please use HH:MM. Error: {e}'}), 400
-        except AttributeError: # If format_time returns None or an object without strftime
+        except AttributeError: 
              return jsonify({'status': 'error', 'message': f'Time formatting failed. Ensure time is HH:MM.'}), 400
 
 
         new_cam = Camera_Settings(
             cam_name=cam_name,
             feed_src=feed_src_to_store,
-            role_camera=Camera_Settings.ROLE_PRESENCE, # Ensure this constant is defined in your model
+            role_camera=Camera_Settings.ROLE_PRESENCE,
             attendance_time_start=attendance_time_start,
             attendance_time_end=attendance_time_end,
             leaving_time_start=leaving_time_start,
             leaving_time_end=leaving_time_end,
             company_id=company.id,
-            cam_is_active=True # Default to active
+            cam_is_active=True 
         )
         db.session.add(new_cam)
         db.session.commit()
         return jsonify({'status': 'success', 'message': 'Presence camera added successfully!'}), 201
 
-    # For GET request, render the page that potentially includes the "Add" modal
-    # This route might not be directly for rendering a separate "add_presence_camera.html" page
-    # if adding is always done via a modal on a list page.
-    # If so, the main page's route (e.g., 'admin.presence_cam') should pass 'company'.
     return render_template('admin_panel/add_presence_camera.html', company=company, form_data={})
 
-
+# --- Mengedit kamera untuk Presence ---
 @bp.route('/edit_presence_camera/<int:cam_id>', methods=['GET', 'POST'])
 @login_required
 @admin_required
 def edit_presence_camera(cam_id):
     camera = Camera_Settings.query.get_or_404(cam_id)
 
-    # Authorization: Ensure the camera belongs to the current_user's company
-    # Adjust based on your User and Company model relationships
-    # Example: Assuming user has a 'company_linked' attribute that is a Company object
-    # And Camera_Settings has a 'company' relationship attribute.
     if not hasattr(current_user, 'company_linked') or not current_user.company_linked:
         if request.method == 'POST':
              return jsonify({'status': 'error', 'message': "Admin account not linked to a company."}), 403
         flash("Admin account not linked to a company.", "danger")
-        return redirect(url_for('auth.login')) # Adjust
+        return redirect(url_for('auth.login')) 
 
     if camera.company_id != current_user.company_linked.id:
         if request.method == 'POST':
             return jsonify({'status': 'error', 'message': "Unauthorized access to camera settings."}), 403
         flash("Unauthorized access to camera settings.", "danger")
-        return redirect(url_for('admin.presence_cam')) # Adjust (e.g., to your main camera list page)
+        return redirect(url_for('admin.presence_cam'))
 
     if camera.role_camera != Camera_Settings.ROLE_PRESENCE:
         if request.method == 'POST':
              return jsonify({'status': 'error', 'message': "This is not a presence camera."}), 400
         flash("This is not a presence camera.", "warning")
-        return redirect(url_for('admin.presence_cam')) # Adjust
+        return redirect(url_for('admin.presence_cam')) 
 
     if request.method == 'POST':
         camera.cam_name = request.form.get('cam_name', camera.cam_name)
-        # IMPORTANT: Ensure your EDIT modal sends 'cam_is_active' (e.g. as a checkbox)
         camera.cam_is_active = request.form.get('cam_is_active') == 'on'
 
         try:
@@ -518,7 +405,7 @@ def edit_presence_camera(cam_id):
                 'leaving_time_end': request.form.get('leaving_time_end'),
             }
             for field_name, time_str in time_fields_to_update.items():
-                if time_str: # Only update if a new value is provided
+                if time_str:
                     setattr(camera, field_name, format_time(time_str).strftime('%H:%M:%S'))
         except ValueError as e:
             return jsonify({'status': 'error', 'message': f'Invalid time format. Please use HH:MM. Error: {e}'}), 400
@@ -526,11 +413,10 @@ def edit_presence_camera(cam_id):
              return jsonify({'status': 'error', 'message': f'Time formatting failed. Ensure time is HH:MM.'}), 400
 
 
-        # IMPORTANT: Ensure your EDIT modal allows changing camera_type and feed_src_rtsp if needed
         new_camera_type = request.form.get('camera_type')
         new_feed_src_rtsp = request.form.get('feed_src_rtsp')
 
-        if new_camera_type: # If user is trying to update camera type/source
+        if new_camera_type: 
             new_feed_src_to_store = None
             if new_camera_type == 'webcam':
                 new_feed_src_to_store = '0'
@@ -542,20 +428,16 @@ def edit_presence_camera(cam_id):
                 return jsonify({'status': 'error', 'message': 'Invalid new camera type selected.'}), 400
 
             if camera.feed_src != new_feed_src_to_store:
-                if camera.feed_src: # If there was an old feed source
-                    release_camera_instance(camera.feed_src) # Assumed helper function
+                if camera.feed_src: 
+                    release_camera_instance(camera.feed_src)
                 camera.feed_src = new_feed_src_to_store
         
         db.session.commit()
         return jsonify({'status': 'success', 'message': 'Presence camera updated successfully!'}), 200
 
-    # For GET request (populating the edit form/page if not solely relying on JS for modal population)
-    # The provided JS `openEditModal` fetches data via 'camera.get_camera_data',
-    # so this GET handler might be for a dedicated edit page.
     current_camera_type = 'webcam' if camera.feed_src == '0' else 'cctv'
     current_feed_src_rtsp = camera.feed_src if current_camera_type == 'cctv' else ''
     
-    # Pass current form data for repopulation if rendering a full page
     form_data = {
         'cam_name': camera.cam_name,
         'cam_is_active': 'on' if camera.cam_is_active else '',
@@ -568,25 +450,23 @@ def edit_presence_camera(cam_id):
     }
     return render_template('admin_panel/edit_presence_camera.html', 
                            Active_Cam=camera, 
-                           form_data=form_data, # Send current camera data as form_data
+                           form_data=form_data, 
                            current_camera_type=current_camera_type,
                            current_feed_src_rtsp=current_feed_src_rtsp)
 
-
+# --- Menghapus kamera ---
 @bp.route('/delete_camera/<int:cam_id>', methods=['POST'])
 @login_required
 @admin_required
 def delete_camera(cam_id):
     camera = Camera_Settings.query.get_or_404(cam_id)
 
-    # Authorization (similar to edit)
     if not hasattr(current_user, 'company_linked') or not current_user.company_linked:
         return jsonify({'status': 'error', 'message': "Admin account not linked to a company."}), 403
     if camera.company_id != current_user.company_linked.id:
         return jsonify({'status': 'error', 'message': "Unauthorized: Camera does not belong to your company."}), 403
 
     try:
-        # Optional: Release camera instance if applicable before deleting
         if camera.feed_src:
             release_camera_instance(camera.feed_src)
 
@@ -595,7 +475,6 @@ def delete_camera(cam_id):
         return jsonify({'status': 'success', 'message': 'Camera deleted successfully.'}), 200
     except Exception as e:
         db.session.rollback()
-        # Log the error e
         return jsonify({'status': 'error', 'message': f'Error deleting camera: {str(e)}'}), 500
 
 # It's assumed you have a route like this for populating the edit modal via JS

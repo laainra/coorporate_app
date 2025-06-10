@@ -8,7 +8,7 @@ Employee Dashboard
 
 <div class="content">
     <div class="container-xl">
-    <div class="header mb-4">
+        <div class="header mb-4">
             <div class="row align-items-center justify-content-between gx-4">
                 <div class="col-auto">
                     <div class="page-pretitle">
@@ -70,21 +70,26 @@ Employee Dashboard
                                 <tr>
                                     <td>{{ entry.attended | default('-') }}</td>
                                     <td>
+                                        {# Menggunakan kelas badge dengan padding yang lebih besar atau warna latar belakang penuh #}
                                         {% if entry.status == 'ONTIME' %}
-                                            <span class="badge bg-success">ONTIME</span>
+                                            <span class="badge bg-success-lt text-dark p-2 w-100">ONTIME</span>
                                         {% elif entry.status == 'LATE' %}
-                                            <span class="badge bg-warning">LATE</span>
+                                            <span class="badge bg-warning-lt text-dark p-2 w-100">LATE</span>
                                         {% elif entry.status == 'LEAVE' %}
-                                            <span class="badge bg-info">LEAVE</span>
+                                            <span class="badge bg-info-lt text-dark p-2 w-100">LEAVE</span>
+                                        {% elif entry.status == 'OUT_OF_ATTENDANCE_TIME' %} {# Tambahkan status ini jika mungkin ada dari backend Anda #}
+                                            <span class="badge bg-danger-lt text-dark p-2 w-100">OUT OF TIME</span>
+                                        {% elif entry.status == 'BELUM ABSEN' %} {# Status baru dari admin_routes #}
+                                            <span class="badge bg-secondary-lt text-dark p-2 w-100">BELUM ABSEN</span>
                                         {% else %}
-                                            <span class="badge bg-danger">UNKNOWN</span>
+                                            {# Jika ada status lain yang tidak teridentifikasi, tampilkan sebagai UNKNOWN atau default #}
+                                            <span class="badge bg-dark-lt text-white p-2 w-100">UNKNOWN</span>
                                         {% endif %}
                                     </td>
                                     <td>{{ entry.work_hours }}</td>
                                     <td>{{ entry.notes }}</td>
                                     <td>
                                         {% if entry.attendance_image_path and entry.attendance_image_path != 'img/no_image.png' %}
-                                            {# Example: entry.attendance_image_path is 'img/presence_images/20240523/presence_JohnDoe_103000.jpg' #}
                                             <a href="{{ url_for('static', filename=entry.attendance_image_path) }}" target="_blank">View</a>
                                         {% else %}
                                             -

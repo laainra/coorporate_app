@@ -7,8 +7,8 @@ Presence Report
 {% block content %}
 <div class="content">
     <div class="container-xl">
-        <div class="page-header">
-            <div class="row align-items-center">
+        <div class="header mb-4">
+            <div class="row align-items-center justify-content-between gx-4">
                 <div class="col-auto">
                     <div class="page-pretitle">Employees</div>
                     <h2 class="page-title">Employee Attendance</h2>
@@ -26,20 +26,16 @@ Presence Report
                 <div class="card">
                     <div class="card-body border-bottom py-3">
                         <div class="d-flex mb-4">
-                            {# Corrected form action and input names #}
                             <form method="GET" action="{{ url_for('admin.presence_view') }}" id="filter-form">
                                 <div class="form-row align-items-end">
                                     <div class="col-auto mr-2">
                                         <label for="filter-date" class="form-label">Date</label>
-                                        {# Use filter_date_str passed from view for the value #}
                                         <input type="date" id="filter-date" name="filter_date" class="form-control calendar-range" placeholder="Date" value="{{ filter_date_str if filter_date_str else today_date_str }}" />
                                     </div>
                                     <div class="col-auto mr-2">
                                         <label for="filter-personnel" class="form-label">Employee</label>
-                                        {# Corrected select name #}
                                         <select id="filter-personnel" name="filter_personnel_id" class="form-control">
                                             <option value="">All Employees</option>
-                                            {# Use personnel_list_for_dropdown passed from view #}
                                             {% for p in personnel_list_for_dropdown %}
                                             <option value="{{ p.id }}" {% if p.id|string == filter_personnel_id|string %}selected{% endif %}>{{ p.name }}</option>
                                             {% endfor %}
@@ -48,11 +44,14 @@ Presence Report
                                     <div class="col-auto">
                                         <button type="submit" class="btn btn-primary mt-1">Filter</button>
                                     </div>
+                                    {# Tambahkan input hidden untuk menjaga filter saat navigasi halaman #}
+                                    <input type="hidden" name="page" value="{{ pagination.page }}">
                                 </div>
                             </form>
                         </div>
                         <div class="d-flex">
-                            <div class="text-muted">Show <div class="mx-2 d-inline-block"><input type="text" class="form-control form-control-sm" value="8" size="3"></div> entries</div>
+                            <div class="text-muted">Show <span>{{ pagination.per_page }}</span> entries per page</div> {# Menggunakan pagination.per_page #}
+                            {# Jika Anda ingin fitur search frontend, biarkan ini. Untuk backend search, ini perlu diubah. #}
                             <div class="ml-auto text-muted">Search: <div class="ml-2 d-inline-block"><input type="text" class="form-control form-control-sm"></div></div>
                         </div>
                     </div>
@@ -70,44 +69,48 @@ Presence Report
                                     <th>Leaving Image</th>
                                     <th>Work Hours</th>
                                     <th>Notes</th>
-                                    <th></th>
                                 </tr>
                             </thead>
                             <tbody id="presence-table-body">
-                                {# Corrected loop variable and attribute access #}
-                                {% for entry in presence_data_report %}
+                                {# Menggunakan pagination.items untuk data yang ditampilkan #}
+                                {% for entry in pagination.items %}
                                 <tr>
-                                    <td>{{ loop.index }}</td>
-                                    <td>{{ entry.personnel_id }}</td> {# Assuming personnel_id from formatted data is the Employee ID you want #}
+                                    <td>{{ (pagination.page - 1) * pagination.per_page + loop.index }}</td> {# Nomor urut yang benar #}
+                                    <td>{{ entry.personnel_id }}</td>
                                     <td>{{ entry.name }}</td>
-                                    <td>{{ entry.attended_time.strftime('%H:%M:%S') if entry.attended_time else 'N/A' }}</td>
+                                    <td>{{ entry.attended_time }}</td>
                                     <td>
                                         {% if entry.attendance_image_path %}
-                                        <img src="{{ url_for('static', filename=entry.attendance_image_path.lstrip('/')) }}" class="img-fluid" width="35"/> {# lstrip('/') for safety #}
+                                        <img src="{{ url_for('static', filename=entry.attendance_image_path.lstrip('/')) }}" class="img-fluid" width="35"/>
                                         {% else %}
                                         No image
                                         {% endif %}
                                     </td>
-                                    <td>{{ entry.status | title if entry.status else 'N/A' }}</td> {# .title to capitalize ONTIME -> Ontime #}
-                                    <td>{{ entry.leave_time.strftime('%H:%M:%S') if entry.leave_time else 'N/A' }}</td>
+                                    <td>
+                                        {% if entry.status == 'ONTIME' %}
+                                            <span class="badge bg-success-lt">ONTIME</span>
+                                        {% elif entry.status == 'LEAVE' %}
+                                            <span class="badge bg-info-lt">PULANG</span>
+                                        {% elif entry.status == 'LATE' %}
+                                            <span class="badge bg-warning-lt">LATE</span>
+                                        {% elif entry.status == 'OUT_OF_ATTENDANCE_TIME' %}
+                                            <span class="badge bg-danger-lt">OUT OF TIME</span>
+                                        {% elif entry.status == 'BELUM ABSEN' %}
+                                            <span class="badge bg-secondary-lt">BELUM ABSEN</span>
+                                        {% else %}
+                                            <span class="badge bg-light text-muted">{{ entry.status | title if entry.status else 'N/A' }}</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ entry.leave_time }}</td>
                                     <td>
                                         {% if entry.leaving_image_path %}
-                                        <img src="{{ url_for('static', filename=entry.leaving_image_path.lstrip('/')) }}" class="img-fluid" width="35"/> {# lstrip('/') for safety #}
+                                        <img src="{{ url_for('static', filename=entry.leaving_image_path.lstrip('/')) }}" class="img-fluid" width="35"/>
                                         {% else %}
                                         No image
                                         {% endif %}
                                     </td>
                                     <td>{{ entry.work_hours_str if entry.work_hours_str is not none else 'N/A' }}</td>
                                     <td>{{ entry.notes if entry.notes else '' }}</td>
-                                    <td class="text-right">
-                                        <span class="dropdown ml-1">
-                                            <button class="btn btn-white btn-sm dropdown-toggle align-text-top" data-boundary="viewport" data-toggle="dropdown">Actions</button>
-                                            <div class="dropdown-menu dropdown-menu-right">
-                                                <a class="dropdown-item" href="#">Action</a>
-                                                <a class="dropdown-item" href="#">Another action</a>
-                                            </div>
-                                        </span>
-                                    </td>
                                 </tr>
                                 {% else %}
                                 <tr>
@@ -118,9 +121,31 @@ Presence Report
                         </table>
                     </div>
                     <div class="card-footer d-flex align-items-center">
-                        <p class="m-0 text-muted">Showing <span>{{ presence_data_report|length if presence_data_report else 0 }}</span> entries</p>
+                        <p class="m-0 text-muted">Showing <span>{{ (pagination.page - 1) * pagination.per_page + 1 }}</span> to <span>{{ (pagination.page - 1) * pagination.per_page + pagination.items|length }}</span> of <span>{{ pagination.total }}</span> entries</p>
                         <ul class="pagination m-0 ml-auto">
-                            {# Actual pagination logic needed here #}
+                            {# Link Previous #}
+                            <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
+                                <a class="page-link" href="{{ url_for('admin.presence_view', page=pagination.prev_num, filter_date=filter_date_str, filter_personnel_id=filter_personnel_id) }}" tabindex="-1" aria-disabled="true">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"></path><polyline points="15 6 9 12 15 18"></polyline></svg>
+                                    prev
+                                </a>
+                            </li>
+                            {# Loop untuk nomor halaman #}
+                            {% for p_num in pagination.iter_pages() %}
+                                {% if p_num %}
+                                    <li class="page-item {% if p_num == pagination.page %}active{% endif %}">
+                                        <a class="page-link" href="{{ url_for('admin.presence_view', page=p_num, filter_date=filter_date_str, filter_personnel_id=filter_personnel_id) }}">{{ p_num }}</a>
+                                    </li>
+                                {% else %}
+                                    <li class="page-item disabled"><a class="page-link" href="#">...</a></li>
+                                {% endif %}
+                            {% endfor %}
+                            {# Link Next #}
+                            <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
+                                <a class="page-link" href="{{ url_for('admin.presence_view', page=pagination.next_num, filter_date=filter_date_str, filter_personnel_id=filter_personnel_id) }}">
+                                    next <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"></path><polyline points="9 6 15 12 9 18"></polyline></svg>
+                                </a>
+                            </li>
                         </ul>
                     </div>
                 </div>
@@ -148,14 +173,13 @@ Presence Report
     function downloadPresenceData() {
         const date = document.getElementById('filter-date').value;
         const personnelId = document.getElementById('filter-personnel').value;
-        // Corrected url_for and parameter names
-        let url = "{{ url_for('admin.download_presence_excel') }}"; // Ensure download_presence_excel is defined
+        let url = "{{ url_for('admin.download_presence_excel') }}";
         const params = new URLSearchParams();
         if (date) {
-            params.append('filter_date', date); // Match view expectation
+            params.append('filter_date', date);
         }
         if (personnelId && personnelId !== "") {
-            params.append('filter_personnel_id', personnelId); // Match view expectation
+            params.append('filter_personnel_id', personnelId);
         }
         if (params.toString()) {
             url += `?${params.toString()}`;
@@ -165,15 +189,9 @@ Presence Report
 
     document.addEventListener('DOMContentLoaded', (event) => {
         const dateInput = document.getElementById('filter-date');
-        if (!dateInput.value) { // Only set if not already pre-filled by server
+        if (!dateInput.value) {
             dateInput.value = "{{ today_date_str }}";
         }
-
-        // The AJAX filtering part (performAjaxFilter) is not included in this revision
-        // as the primary issue is with the initial server-side render.
-        // If AJAX is needed, ensure the Flask view handles XHR requests and returns JSON,
-        // and the performAjaxFilter function correctly processes this JSON.
-        // The current form will perform a full page reload with new filter parameters.
     });
 </script>
 {% endblock %}

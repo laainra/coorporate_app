@@ -1,0 +1,2 @@
+Timestamp,Camera URL,Total Frames Processed,Frames with Face Detected,Frame Detection Accuracy (%),Recognized Faces,Recognized Faces (%),Unknown Faces,Unknown Faces (%)
+2025-06-10_10-35-18,rtsp://192.168.1.15:1935/,86,84.31,16,15.69

@@ -21,7 +21,7 @@ Dataset Wajah
                         {% if current_user.is_employee %}
                         <div class="card-body text-center">
                             <button class="btn btn-primary mt-3" onclick="redirectToCapturePage()">Capture Faces</button>
-                            <button class="btn btn-primary mt-3" onclick="trainModel()">Train Face Model</button>
+                   
                         </div>
                         {% endif %}
 
@@ -86,7 +86,7 @@ Dataset Wajah
             }
         });
 
-        fetch("{{ url_for('stream.train_model') }}", {
+        fetch("{{ url_for('face.train_model_route') }}", {
             method: 'POST',
             headers: {
                 'X-CSRFToken': getCsrfToken(),

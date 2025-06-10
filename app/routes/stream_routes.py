@@ -99,7 +99,7 @@ def get_camera_instance(camera_source):
 
     if isinstance(processed_source, int):
         # 👇 Prioritaskan backend tercepat
-        for backend in [cv2.CAP_DSHOW, cv2.CAP_V4L2, cv2.CAP_ANY]:  # Hindari CAP_MSMF jika tidak perlu
+         for backend in [cv2.CAP_MSMF,cv2.CAP_DSHOW, cv2.CAP_V4L2, cv2.CAP_ANY]:   # Hindari CAP_MSMF jika tidak perlu
             tried_backends.append(backend)
             cap = cv2.VideoCapture(processed_source, backend)
             if cap.isOpened():
@@ -538,24 +538,10 @@ detection_times = {}
 @bp.route('/capture_video')
 @login_required
 def capture_video():
-    # Ambil model path di sini, dalam konteks aplikasi yang benar
-    model_file_path = get_model_path()
-    
-    label_to_name = load_label_to_name()
+
 
     def generate_frames():
-        if not os.path.exists(model_file_path):
-            dummy_frame = np.zeros((480, 640, 3), dtype=np.uint8)
-            cv2.putText(dummy_frame, "MODEL NOT TRAINED!", (100, 240), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
-            _, jpeg = cv2.imencode('.jpg', dummy_frame)
-            yield (b'--frame\r\n'
-                   b'Content-Type: image/jpeg\r\n\r\n' + jpeg.tobytes() + b'\r\n')
-            return
-
-        recognizer = cv2.face.LBPHFaceRecognizer_create()
-        recognizer.read(model_file_path)
-
-        
+ 
 
         cap = cv2.VideoCapture(0)
 
@@ -563,27 +549,6 @@ def capture_video():
             ret, frame = cap.read()
             if not ret:
                 break
-
-            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-
-            faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5)
-
-            for (x, y, w, h) in faces:
-                face_roi = cv2.resize(gray[y:y+h, x:x+w], (200, 200))
-
-                label, confidence = recognizer.predict(face_roi)
-                name = label_to_name.get(label, "Unknown")
-
-                if confidence < 70:
-                    color = (0, 255, 0)
-                else:
-                    color = (0, 0, 255)
-                    name = "Unknown"
-
-                cv2.rectangle(frame, (x, y), (x+w, y+h), color, 2)
-                cv2.putText(frame, f"{name} ({int(confidence)})", (x, y-10),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2)
-
             ret, jpeg = cv2.imencode('.jpg', frame)
             if not ret:
                 continue
@@ -1294,26 +1259,24 @@ def capture_presence_video(cam_id):
         print(f"[Generator {cam_id}] Frame generation stopped.")
 
     return Response(generate_frames_with_timeout(), mimetype='multipart/x-mixed-replace; boundary=frame')
+MAX_CONFIDENCE_THRESHOLD = 70  # Contoh nilai, sesuaikan!
+
 def capture_presence_logic(camera_id=0):
-    # ... (kode Anda, tidak diubah) ...
+    # ... (kode awal Anda untuk mengambil camera, model_path, recognizer, label_to_name_map tetap sama) ...
     # Pastikan semua variabel seperti current_app, face_cascade, dll. tersedia
-    camera = Camera_Settings.query.get(camera_id) # Menggunakan query_get dari mock/model Anda
+    camera = Camera_Settings.query.get(camera_id)
     if not camera:
         return {'success': False, 'message': f'Kamera ID {camera_id} tidak ditemukan.'}
 
     model_path = get_model_path()
-    # personnel_path = get_personnel_folder_path() # personnel_path digunakan di bawah
-
     if not os.path.exists(model_path):
         return {'success': False, 'message': 'Model tidak tersedia, harap latih model terlebih dahulu.'}
     
     recognizer = cv2.face.LBPHFaceRecognizer_create()
     recognizer.read(model_path)
 
-    # Logika load_label_to_name ada di sini di kode Anda, pastikan ini yang diinginkan
-    # atau panggil fungsi global load_label_to_name() jika ada
     label_to_name_map = {}
-    personnel_path = get_personnel_folder_path() # Pastikan path ini benar
+    personnel_path = get_personnel_folder_path() 
     if os.path.exists(personnel_path) and os.path.isdir(personnel_path):
         for face_folder in os.listdir(personnel_path):
             face_folder_path = os.path.join(personnel_path, face_folder)
@@ -1321,20 +1284,17 @@ def capture_presence_logic(camera_id=0):
                 for file_name in os.listdir(face_folder_path):
                     if file_name.lower().endswith(('.jpg','.png','.jpeg')):
                         try:
-                            # Asumsi format nama file: prefix_LABEL_NAMALENGKAP_suffix.jpg
                             parts = os.path.splitext(file_name)[0].split('_')
                             if len(parts) >= 3:
                                 label = int(parts[1])
-                                extracted_name = "_".join(parts[2:]) # Gabungkan sisa nama jika ada underscore
+                                extracted_name = "_".join(parts[2:])
                                 label_to_name_map[label] = extracted_name
                         except (IndexError, ValueError) as e:
-                            # print(f"Skipping file due to parsing error ({e}): {file_name}")
                             continue
     else:
         print(f"Warning: Personnel path '{personnel_path}' tidak ditemukan atau bukan direktori.")
 
-
-    cap = None # Inisialisasi
+    cap = None 
     try:
         camera_feed_source = int(camera.feed_src) if str(camera.feed_src).isdigit() else camera.feed_src
         cap = get_camera_instance(camera_feed_source)
@@ -1342,106 +1302,133 @@ def capture_presence_logic(camera_id=0):
             return {'success': False, 'message': f'Kamera {camera.name if hasattr(camera, "name") else camera.feed_src} tidak dapat dibuka.'}
 
         frame_count = 0
-        max_frames = 100 # Mungkin perlu disesuaikan
+        max_frames = 100 
         person_processed_in_this_call = False
+        face_detected_with_sufficient_confidence = False # Flag baru
 
         while frame_count < max_frames and not person_processed_in_this_call:
             ret, frame = cap.read()
             if not ret or frame is None:
                 frame_count += 1
-                cv2.waitKey(20) # Beri jeda singkat jika frame gagal dibaca
+                cv2.waitKey(20) 
                 continue
 
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            # if not face_cascade: # Periksa jika face_cascade gagal dimuat
-            #     return {'success': False, 'message': 'Face detector tidak siap.'}
-            faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5)
-            if faces is None or len(faces) == 0:
+            # Pastikan face_cascade sudah diinisialisasi dengan benar sebelumnya
+            # Misalnya: face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+            if 'face_cascade' not in globals() or face_cascade.empty():
+                 print("Error: Haar Cascade model gagal dimuat atau tidak ada.")
+                 return {'success': False, 'message': 'Model detektor wajah tidak siap.'}
 
+            faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5)
+            
+            if faces is None or len(faces) == 0:
                 frame_count += 1
                 cv2.waitKey(20)
                 continue
 
             for (x, y, w, h) in faces:
                 roi = gray[y:y + h, x:x + w]
-                roi_resized = cv2.resize(roi, (200, 200), interpolation=cv2.INTER_AREA) # INTER_AREA mungkin lebih baik untuk downscaling
+                roi_resized = cv2.resize(roi, (200, 200), interpolation=cv2.INTER_AREA)
                 label, confidence = recognizer.predict(roi_resized)
-                name = label_to_name_map.get(label, "Unknown")
-                clean_name = re.sub(r'[_\d]+$', '', name)
                 
-                # Tambahkan logika kepercayaan di sini jika diperlukan sebelum menyimpan
-                # Misalnya: if confidence < MAX_CONFIDENCE_THRESHOLD:
-                
-                now = datetime.now()
-                # Pastikan current_app.config['UPLOAD_FOLDER'] terdefinisi
-                upload_folder = current_app.config.get('UPLOAD_FOLDER', os.path.join(current_app.root_path, 'static', 'uploads'))
-                save_directory = os.path.join(upload_folder, 'extracted_faces', 'predicted_faces', 'absence', now.strftime('%Y%m%d'))
-                os.makedirs(save_directory, exist_ok=True)
+                # Cetak confidence untuk membantu menentukan threshold yang tepat saat testing
+                print(f"Detected Label: {label}, Name: {label_to_name_map.get(label, 'Unknown')}, Confidence: {confidence:.2f}")
 
-                image_name_safe = "".join(c if c.isalnum() or c in ['_'] else '_' for c in clean_name) # Buat nama file aman
-                image_path = os.path.join(save_directory, f"{image_name_safe}_{now.strftime('%H%M%S%f')}.jpg")
-                
-                # Simpan ROI (Region of Interest) wajah yang terdeteksi
-                face_image_to_save = frame[y:y+h, x:x+w]
-                save_success = cv2.imwrite(image_path, face_image_to_save)
+                # --- PENGECEKAN CONFIDENCE DIMULAI DI SINI ---
+                if confidence < MAX_CONFIDENCE_THRESHOLD:
+                    name = label_to_name_map.get(label, "Unknown")
+                    if name == "Unknown":
+                        # Jika label tidak ada di map, atau confidence terlalu tinggi meskipun dikenali sebagai label tertentu
+                        # Anda bisa memilih untuk tidak memprosesnya sebagai "dikenali"
+                        print(f"Wajah terdeteksi sebagai 'Unknown' atau label tidak ada di map, confidence: {confidence:.2f}. Tidak diproses.")
+                        # Jika ingin tetap mencoba wajah lain dalam frame yang sama, gunakan 'continue'
+                        # Jika ingin menghentikan pemrosesan frame ini dan lanjut ke frame berikutnya,
+                        # ini sudah ditangani oleh loop 'for (x,y,w,h) in faces:'
+                        continue # Lanjut ke wajah berikutnya jika ada, atau frame berikutnya jika tidak
 
-                if not save_success:
-                    print(f"Gagal menyimpan gambar ke: {image_path}")
-                    # Jangan lanjutkan ke pemrosesan absensi jika gambar gagal disimpan
-                    continue # Coba wajah berikutnya jika ada
+                    clean_name = re.sub(r'[_\d]+$', '', name)
+                    face_detected_with_sufficient_confidence = True # Tandai bahwa wajah yang cukup dikenal terdeteksi
+                    print(f"Wajah dikenali sebagai: {clean_name} dengan confidence: {confidence:.2f} (DI BAWAH THRESHOLD {MAX_CONFIDENCE_THRESHOLD})")
 
-                data = {
-                    'name': clean_name,
-                    'datetime': now.strftime('%Y-%m-%d %H:%M:%S'),
-                    'image_path': image_path, # Atau path relatif jika dibutuhkan
-                    'camera_id': camera.id,
-                    'confidence': confidence # Sertakan confidence jika berguna untuk proses_attendance_entry
-                }
+                    # --- PROSES PENYIMPANAN DAN ABSENSI HANYA JIKA CONFIDENCE CUKUP ---
+                    now = datetime.now()
+                    upload_folder = current_app.config.get('UPLOAD_FOLDER', os.path.join(current_app.root_path, 'static', 'uploads'))
+                    save_directory = os.path.join(upload_folder, 'extracted_faces', 'predicted_faces', 'absence', now.strftime('%Y%m%d'))
+                    os.makedirs(save_directory, exist_ok=True)
 
-                result = process_attendance_entry(data) # Asumsikan fungsi ini ada
-                person_processed_in_this_call = True # Tandai bahwa seseorang telah diproses
-                
-                # Tidak perlu cap.release() di sini karena akan dirilis di finally atau setelah loop max_frames
-                parts = name.rsplit('_', 1)
-                display_name = name # Default ke nama asli
+                    image_name_safe = "".join(c if c.isalnum() or c in ['_'] else '_' for c in clean_name)
+                    image_path = os.path.join(save_directory, f"{image_name_safe}_{now.strftime('%H%M%S%f')}_{int(confidence)}.jpg") # Tambahkan confidence ke nama file
+                    
+                    face_image_to_save = frame[y:y+h, x:x+w]
+                    save_success = cv2.imwrite(image_path, face_image_to_save)
 
-                # Periksa apakah ada pemisahan dan bagian kedua adalah angka (menandakan format "nama_angka")
-                if len(parts) == 2 and parts[1].isdigit():
-                    display_name = parts[0]
-                # Kembalikan hasil berdasarkan output process_attendance_entry
-                if result == 'success':
-                    return {'success': True, 'message': f'Absensi tercatat untuk {display_name}.'}
-                elif result == 'already_present': # Sesuaikan string ini dengan output aktual Anda
-                    return {'success': False, 'message': f'{display_name} sudah absen hari ini.'} # "False" agar tidak ada notif sukses berulang
-                elif result == 'not_eligible_for_leave':
-                    return {'success': False, 'message': 'Tidak dapat mencatat IZIN sebelum TEPAT WAKTU atau TERLAMBAT'}
-                elif result == 'personnel_not_found':
-                    return {'success': False, 'message': 'Personel tidak ditemukan'}
-                elif result == 'invalid_camera':
-                     return {'success': False, 'message': 'Kamera tidak valid atau tidak aktif'}
-                else: # Handle kasus lain dari process_attendance_entry
-                    return {'success': False, 'message': result if isinstance(result, str) else f'Gagal mencatat absensi untuk {name}.'}
-            
-            if person_processed_in_this_call: # Jika seseorang sudah diproses, keluar dari while loop
-                break
+                    if not save_success:
+                        print(f"Gagal menyimpan gambar ke: {image_path}")
+                        continue 
+
+                    data = {
+                        'name': clean_name,
+                        'datetime': now.strftime('%Y-%m-%d %H:%M:%S'),
+                        'image_path': image_path, 
+                        'camera_id': camera.id,
+                        'confidence': float(confidence) # Simpan confidence sebagai float
+                    }
+
+                    result = process_attendance_entry(data) 
+                    person_processed_in_this_call = True 
+                    
+                    parts = name.rsplit('_', 1)
+                    display_name = name 
+                    if len(parts) == 2 and parts[1].isdigit():
+                        display_name = parts[0]
+                    
+                    if result == 'success':
+                        return {'success': True, 'message': f'Absensi tercatat untuk {display_name} (Conf: {confidence:.2f}).'}
+                    # ... (sisa penanganan 'result' Anda) ...
+                    elif result == 'already_present':
+                        return {'success': False, 'message': f'{display_name} sudah absen hari ini.'}
+                    elif result == 'not_eligible_for_leave':
+                        return {'success': False, 'message': 'Tidak dapat mencatat IZIN sebelum TEPAT WAKTU atau TERLAMBAT'}
+                    elif result == 'personnel_not_found':
+                        return {'success': False, 'message': 'Personel tidak ditemukan'}
+                    elif result == 'invalid_camera':
+                        return {'success': False, 'message': 'Kamera tidak valid atau tidak aktif'}
+                    else: 
+                        return {'success': False, 'message': result if isinstance(result, str) else f'Gagal mencatat absensi untuk {name} (Conf: {confidence:.2f}).'}
+
+                else: # Jika confidence TIDAK memenuhi syarat (terlalu tinggi)
+                    print(f"Wajah terdeteksi (Label: {label}, Name: {label_to_name_map.get(label, 'Unknown')}) tetapi confidence {confidence:.2f} terlalu tinggi (DI ATAS THRESHOLD {MAX_CONFIDENCE_THRESHOLD}). Tidak diproses.")
+                    # Anda bisa memutuskan untuk tidak melakukan apa-apa, atau mencatatnya sebagai "tidak dikenali"
+                    # Untuk saat ini, kita akan lanjut ke deteksi wajah berikutnya dalam frame yang sama jika ada
+
+            if person_processed_in_this_call: 
+                break 
             frame_count += 1
         
-        # Jika loop selesai tanpa memproses siapa pun
+        # Jika loop selesai
         if not person_processed_in_this_call:
-            return {'success': False, 'message': 'Tidak ada wajah terdeteksi/dikenali setelah beberapa percobaan.'}
-        # Fallback jika sesuatu yang aneh terjadi
+            if face_detected_with_sufficient_confidence: # Pernah ada wajah dikenali tapi mungkin gagal di proses_attendance_entry
+                 return {'success': False, 'message': 'Wajah dikenali tetapi gagal diproses untuk absensi.'}
+            else: # Tidak ada wajah yang dikenali dengan confidence cukup
+                 return {'success': False, 'message': 'Tidak ada wajah terdeteksi/dikenali dengan keyakinan cukup setelah beberapa percobaan.'}
+        
         return {'success': False, 'message': 'Proses absensi selesai dengan status tidak diketahui.'}
 
-    except Exception as e:
+    except cv2.error as cv_err:
         import traceback
+        print(f"OpenCV Error di capture_presence_logic: {cv_err}. Args: {cv_err.args}")
+        traceback.print_exc()
+        return {'success': False, 'message': f'Terjadi error OpenCV: {str(cv_err)}'}
+    except Exception as e:
+        import traceback 
         print(f"Error di capture_presence_logic: {e}")
         traceback.print_exc()
         return {'success': False, 'message': f'Terjadi error server: {str(e)}'}
     finally:
         if cap and cap.isOpened():
-            # print(f"Melepaskan kamera {camera.feed_src} dari capture_presence_logic.")
             cap.release()
-
+            print(f"Kamera {camera.feed_src if hasattr(camera, 'feed_src') else camera_id} dilepas dari capture_presence_logic.")
 
 @bp.route('/capture_presence_cam', methods=['POST'])
 # @login_required

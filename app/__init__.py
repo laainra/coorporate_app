@@ -19,6 +19,10 @@ def create_app():
     db.init_app(app)
     login_manager.init_app(app)
     migrate.init_app(app, db)
+     # Import blueprint setelah app dibuat
+
+
+
 
     # Import blueprints (pastikan nama blueprint dan url_prefix sesuai)
     from app.routes.auth_routes import bp as auth_bp
@@ -58,6 +62,8 @@ def create_app():
     # Logika Pembuatan Superadmin Otomatis
     # ====================================================================
     with app.app_context():
+        from .routes import face_routes
+        face_routes.initialize_ai_models(app)
         from app.models import Users # Import model di dalam context
         if not Users.query.filter_by(role=Users.ROLE_SUPERADMIN).first():
             # Jika belum ada superadmin, buat satu

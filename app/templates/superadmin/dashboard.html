@@ -6,106 +6,106 @@ Dashboard Superadmin
 {% block content %} 
 <div class="content">
     <div class="container-xl">
-        {# Pastikan tidak ada kelas yang menyebabkan centering di sini #}
- <div class="header mb-4">
-            {# Added justify-content-between and gx-4 for explicit spacing #}
+        <div class="header mb-4">
             <div class="row align-items-center justify-content-between gx-4">
-        <div class="col-auto"> {# col-auto by default aligns to start (left) #}
-            <div class="page-pretitle">
-                Overview
+                <div class="col-auto">
+                    <div class="page-pretitle">Overview</div>
+                    <h2 class="page-title">Dashboard</h2>
+                </div>
             </div>
-            <h2 class="page-title">
-                Dashboard
-            </h2>
         </div>
-        {# Tambahkan col-auto ms-auto kosong di sini jika ada elemen di kanan yang mungkin mendorongnya ke tengah #}
-        <div class="col-auto ms-auto d-print-none">
-            {# Ini adalah tempat untuk tombol atau aksi di kanan atas. #}
-            {# Jika tidak ada, biarkan kosong atau hapus div ini jika tidak ada konten di kanan #}
-        </div>
-    </div>
-</div>
+
         <div class="row row-deck row-cards">
-            <div class="col-sm-6 col-lg-3">
+            <div class="col-sm-6 col-lg-4">
                 <div class="card">
                     <div class="card-body">
                         <div class="d-flex align-items-center">
                             <div class="subheader">Number of Companies</div>
-                            <div class="ms-auto lh-1"> 
-                                <div class="dropdown">
-                                    <a class="dropdown-toggle text-muted" href="#" data-bs-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
-                                        Last 7 days
-                                    </a>
-                                    <div class="dropdown-menu dropdown-menu-right">
-                                        <a class="dropdown-item" onclick="updateTotal('companies-display', '{{ companies_last_7_days }}', this)">Last 7 days</a>
-                                        <a class="dropdown-item" onclick="updateTotal('companies-display', '{{ companies_last_30_days }}', this)">Last 30 days</a>
-                                        <a class="dropdown-item" onclick="updateTotal('companies-display', '{{ total_companies }}', this)">All Data</a>
-                                    </div>
-                                </div>
-                            </div>
                         </div>
-                        <div class="h1 mb-1 mt-3" id="total-companies-display">{{ total_companies }}</div>
+                        <div class="h1 mb-1 mt-3">{{ total_companies }}</div>
                     </div>
                 </div>
             </div>
-            <div class="col-sm-6 col-lg-3">
+            <div class="col-sm-6 col-lg-4">
                 <div class="card">
                     <div class="card-body">
                         <div class="d-flex align-items-center">
                             <div class="subheader">Number of Accounts</div>
-                            <div class="ms-auto lh-1"> 
-                                <div class="dropdown">
-                                    <a class="dropdown-toggle text-muted" href="#" data-bs-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
-                                        Last 7 days
-                                    </a>
-                                    <div class="dropdown-menu dropdown-menu-right">
-                                        <a class="dropdown-item" onclick="updateTotal('accounts-display', '{{ accounts_last_7_days }}', this)">Last 7 days</a>
-                                        <a class="dropdown-item" onclick="updateTotal('accounts-display', '{{ accounts_last_30_days }}', this)">Last 30 days</a>
-                                        <a class="dropdown-item" onclick="updateTotal('accounts-display', '{{ total_accounts }}', this)">All Data</a>
-                                    </div>
-                                </div>
-                            </div>
                         </div>
-                        <div class="h1 mb-1 mt-3" id="total-accounts-display">{{ total_accounts }}</div>
+                        <div class="h1 mb-1 mt-3">{{ total_accounts }}</div>
                     </div>
                 </div>
             </div>
-            <div class="col-sm-6 col-lg-3">
+            <div class="col-sm-6 col-lg-4">
                 <div class="card">
                     <div class="card-body">
                         <div class="d-flex align-items-center">
                             <div class="subheader">Number of Employees</div>
-                            <div class="ms-auto lh-1"> 
-                                <div class="dropdown">
-                                    <a class="dropdown-toggle text-muted" href="#" data-bs-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
-                                        Last 7 days
-                                    </a>
-                                    <div class="dropdown-menu dropdown-menu-right">
-                                        <a class="dropdown-item" onclick="updateTotal('employees-display', '{{ employees_last_7_days }}', this)">Last 7 days</a>
-                                        <a class="dropdown-item" onclick="updateTotal('employees-display', '{{ employees_last_30_days }}', this)">Last 30 days</a>
-                                        <a class="dropdown-item" onclick="updateTotal('employees-display', '{{ total_employees }}', this)">All Data</a>
-                                    </div>
-                                </div>
-                            </div>
                         </div>
-                        <div class="h1 mb-1 mt-3" id="total-employees-display">{{ total_employees }}</div>
+                        <div class="h1 mb-1 mt-3">{{ total_employees }}</div>
                     </div>
                 </div>
             </div>
-
         </div>
+
+        <div class="row row-deck row-cards mt-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title">Growth Over Last 30 Days</h3>
+                    </div>
+                    <div class="card-body">
+                        <div id="growth-chart"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
     </div>
 </div>
 
-<script> 
-    // Function to update the total display for a specific card
-    function updateTotal(displayId, value, clickedElement) {
-        document.getElementById(displayId).innerText = value;
-        // Optional: Update the dropdown text to reflect the selected filter
-        const dropdownToggle = clickedElement.closest('.dropdown').querySelector('.dropdown-toggle');
-        if (dropdownToggle) {
-            dropdownToggle.innerText = clickedElement.innerText;
-        }
+
+<script>
+// Pastikan library ApexCharts sudah di-load dari base.html atau di sini
+document.addEventListener("DOMContentLoaded", function () {
+    // Ambil elemen target untuk chart
+    const chartElement = document.querySelector("#growth-chart");
+
+    // Jika elemen tidak ditemukan, hentikan eksekusi dan beri pesan error di console
+    if (!chartElement) {
+        console.error("Elemen #growth-chart TIDAK DITEMUKAN. Chart tidak bisa dibuat.");
+        return;
     }
+
+    // Ambil data chart yang sudah disiapkan oleh backend
+    const chartData = {{ chart_data|tojson|safe }};
+    
+    // Periksa apakah data yang diterima valid
+    if (!chartData || !chartData.labels || !chartData.company_series) {
+        console.error("Data chart tidak valid atau kosong. Periksa output dari backend Python Anda.");
+        chartElement.innerHTML = '<div class="text-center text-danger">Gagal memuat data chart. Silakan periksa konsol.</div>';
+        return;
+    }
+
+    // Opsi konfigurasi untuk ApexCharts
+    const options = {
+        chart: { type: 'line', height: 350, zoom: { enabled: false }, toolbar: { show: true } },
+        series: [
+            { name: 'Companies', data: chartData.company_series },
+            { name: 'Users', data: chartData.user_series },
+            { name: 'Employees', data: chartData.employee_series }
+        ],
+        xaxis: { categories: chartData.labels, tickAmount: 10, labels: { rotate: -45, hideOverlappingLabels: true } },
+        yaxis: { title: { text: 'Total Kumulatif' } },
+        stroke: { curve: 'smooth', width: 2.5 },
+        legend: { position: 'top', horizontalAlign: 'right' },
+        tooltip: { x: { format: 'dd MMM yyyy' } },
+        title: { text: 'Cumulative Growth (Last 30 Days)', align: 'left' }
+    };
+
+    // Buat instance chart baru dan render ke dalam div #growth-chart
+    const chart = new ApexCharts(chartElement, options);
+    chart.render();
+});
 </script>
 {% endblock %}

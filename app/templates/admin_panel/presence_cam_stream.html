@@ -5,8 +5,8 @@
 {# {% csrf_token %} #} {# Biasanya tidak diletakkan di sini untuk Flask, penanganan CSRF berbeda #}
 <div class="content">
   <div class="container-xl">
-    <div class="page-header">
-      <div class="row align-items-center">
+        <div class="header mb-4">
+            <div class="row align-items-center justify-content-between gx-4">
         <div class="col-auto">
           <div class="page-pretitle">{{ company.name }}'s</div> {# Asumsi 'company' ada di context template #}
           <h2 class="page-title">Presence Stream</h2>
@@ -43,7 +43,7 @@
               {# --- PERUBAHAN DI SINI --- #}
               {# Menggunakan url_for() Flask. 'bp' adalah nama Blueprint Anda. #}
              <img id="img_stream"
-                  data-stream-url-template="{{ url_for('stream.capture_presence_video', cam_id=0) | replace('0', 'CAM_ID') }}"
+                  data-stream-url-template="{{ url_for('face.live_presence_feed', cam_id=0) | replace('0', 'CAM_ID') }}"
                   style="width: 100%; max-height: 60vh; object-fit: contain; border-radius: 0.25rem; display: none;"
                   alt="Live Stream Kamera"/>
 
@@ -219,52 +219,75 @@
     imgStream.src = newStreamUrl;
   }
 
-  function detectPresence() {
-    if (!currentSelectedCameraId) {
-      return;
+    function showSwalNotification(message, iconType = 'info', titleText = 'Informasi') {
+        if (typeof Swal !== 'undefined') {
+            Swal.fire({
+                title: titleText,
+                html: message, // Gunakan html agar bisa format pesan jika perlu
+                icon: iconType,
+                toast: true,
+                position: 'center',
+                showConfirmButton: false,
+                timer: 3000, // Tampilkan selama 5 detik
+                timerProgressBar: true,
+                didOpen: (toast) => {
+                    toast.addEventListener('mouseenter', Swal.stopTimer);
+                    toast.addEventListener('mouseleave', Swal.resumeTimer);
+                }
+            });
+        } else {
+            console.warn("SweetAlert2 (Swal) tidak terdefinisi. Notifikasi:", message);
+            alert(message); // Fallback
+        }
     }
-    const presenceUrl = "{{ url_for('stream.capture_presence_cam') }}";
 
-    fetch(presenceUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        // 'X-CSRFToken': getFlaskCsrfToken() // If using Flask-WTF CSRF for POST
-      },
-      body: JSON.stringify({ camera_id: currentSelectedCameraId })
-    })
-    .then(res => {
-        if (!res.ok) {
-            return res.json().catch(() => { throw new Error(`HTTP error ${res.status}`) });
-        }
-        return res.json();
-    })
-    .then(data => {
-      if (data.status === "success") {
-        Swal.fire({
-          icon: 'success', title: data.message || 'Absensi berhasil!',
-          showConfirmButton: false, timer: 1800, toast: true, position: 'center'
+    // --- Logika Server-Sent Events (SSE) untuk Notifikasi Absensi ---
+    function initializePresenceNotifications() {
+        console.log("SSE: Memulai koneksi ke event stream absensi...");
+        // Pastikan nama blueprint 'face' sudah benar
+        const eventSourceUrl = "{{ url_for('face.presence_events') }}";
+        const eventSource = new EventSource(eventSourceUrl);
+
+        eventSource.onmessage = function(event) {
+            console.log("SSE: Menerima data:", event.data);
+            if (event.data.startsWith(": keepalive")) { // Abaikan komentar keep-alive
+                return;
+            }
+            try {
+                const data = JSON.parse(event.data);
+                if (data && data.message) {
+                    // Tentukan judul notifikasi berdasarkan tipe
+                    let title = "Info Absensi";
+                    if (data.type === 'success') title = "Absensi Berhasil";
+                    else if (data.type === 'warning') title = "Perhatian Absensi";
+                    else if (data.type === 'error') title = "Error Absensi";
+                    
+                    showSwalNotification(data.message, data.type || 'info', title);
+                    
+                    // Perbarui tabel absensi setelah notifikasi diterima
+                    // Beri sedikit jeda agar DB sempat update jika notifikasi terlalu cepat
+                    setTimeout(loadPresenceTable, 500); 
+                }
+            } catch (e) {
+                console.error("SSE: Error parsing data JSON:", e, "Data diterima:", event.data);
+            }
+        };
+
+        eventSource.onerror = function(err) {
+            console.error("SSE: Error koneksi event stream:", err);
+            // EventSource akan otomatis mencoba reconnect.
+            // Anda bisa menambahkan logika untuk menutup setelah beberapa kali gagal.
+            // eventSource.close(); // Jika ingin menghentikan retry
+        };
+
+        // Pastikan eventSource ditutup saat halaman unload untuk menghindari koneksi zombie
+        window.addEventListener('beforeunload', function() {
+            if (eventSource && eventSource.readyState !== EventSource.CLOSED) {
+                console.log("SSE: Menutup koneksi event stream karena halaman unload.");
+                eventSource.close();
+            }
         });
-        loadPresenceTable();
-      } else if (data.status === "info" || data.status === "error") {
-        const msg = data.message || 'Gagal memproses absensi.';
-        if (!msg.toLowerCase().includes("no face") &&
-            !msg.toLowerCase().includes("tidak ada wajah") &&
-            !msg.toLowerCase().includes("already_present") &&
-            !msg.toLowerCase().includes("not_eligible_for_leave")) {
-              Swal.fire({
-                  icon: data.status === "info" ? 'info' : 'warning', title: msg,
-                  showConfirmButton: false, timer: 2500, toast: true, position: 'center'
-              });
-        }
-      } else if (data.message && !data.status) {
-          Swal.fire({ icon: 'error', title: data.message, showConfirmButton: true });
-      }
-    })
-    .catch(err => {
-      console.error('Error saat deteksi absensi:', err);
-    });
-  }
+    }
 
   function loadPresenceTable() {
     const tableDataUrl = "{{ url_for('stream.get_today_presences') }}";
@@ -357,8 +380,9 @@
     }
 
     if (typeof loadPresenceTable === 'function') loadPresenceTable();
-    if (typeof detectPresence === 'function') setInterval(detectPresence, 7000);
-    if (typeof loadPresenceTable === 'function') setInterval(loadPresenceTable, 10000);
+   // if (typeof detectPresence === 'function') setInterval(detectPresence, 7000);
+    if (typeof loadPresenceTable === 'function') setInterval(loadPresenceTable, 7000);
+    initializePresenceNotifications()
   });
 </script>
 {% endblock %}
