@@ -247,3 +247,20 @@ class Work_Timer(db.Model):
 
     def __repr__(self):
         return f'<Work_Timer {self.datetime} - {self.personnel_id} - {self.type}>'
+
+class Tracking(db.Model):
+    __tablename__ = 'tracking'
+    id = db.Column(db.Integer, primary_key=True)
+    camera_id = db.Column(db.Integer, db.ForeignKey('camera_settings.id', ondelete='CASCADE'), nullable=False)
+    detected_class = db.Column(db.String(100), nullable=False)
+    confidence = db.Column(db.Float, default=0.0)
+    timestamp = db.Column(db.DateTime, default=datetime.now)
+    image_path = db.Column(db.String(255), nullable=True)
+    personnel_id = db.Column(db.Integer, db.ForeignKey('personnels.id', ondelete='SET NULL'), nullable=True)  # <--- Tambahkan ini
+    # Optional: personnel_name = db.Column(db.String(100), nullable=True)
+
+    camera = db.relationship('Camera_Settings', backref='trackings')
+    personnel = db.relationship('Personnels', backref='trackings')  # <--- Tambahkan ini jika ingin akses relasi
+
+    def __repr__(self):
+        return f"<Tracking {self.detected_class} - {self.timestamp}>"

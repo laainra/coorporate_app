@@ -20,6 +20,7 @@ class Config:
     # Path untuk AI/CV assets (diletakkan di static)
     HAARCASCADES_PATH = os.path.join(basedir, 'app', 'static', 'haarcascades')
     TRAINED_MODELS_PATH = os.path.join(basedir, 'app', 'static', 'trained_models')
+    YOLO_MODELS_PATH = os.path.join(basedir, 'app', 'static', 'yolo')
 
     # Flask-Login configuration
     REMEMBER_COOKIE_DURATION = timedelta(days=7) # Example: session lasts for 7 days

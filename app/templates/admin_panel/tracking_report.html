@@ -1,0 +1,250 @@
+{% extends "components/base.html" %}
+{% block title %}Tracking Report{% endblock %}
+
+{% block content %}
+<div class="content">
+    <div class="container-xl">
+        <div class="header mb-4">
+            <div class="row align-items-center justify-content-between gx-4">
+                <div class="col-auto">
+                    <div class="page-pretitle">Report</div>
+                    <h2 class="page-title">Tracking Report</h2>
+                </div>
+                <div class="col-auto ms-auto d-print-none">
+                    <a href="#" id="direct-export-btn" class="btn btn-success me-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z"></path><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2v-2"></path><polyline points="7 11 12 16 17 11"></polyline><line x1="12" y1="4" x2="12" y2="16"></line></svg>
+                        Export Excel
+                    </a>
+                    <a href="#" class="btn btn-white" data-bs-toggle="modal" data-bs-target="#modal-export">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z"></path><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2v-2"></path><polyline points="7 11 12 16 17 11"></polyline><line x1="12" y1="4" x2="12" y2="16"></line></svg>
+                        Export Lainnya
+                    </a>
+                </div>
+            </div>
+        </div>
+        <div class="row row-deck row-cards">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-body border-bottom py-3">
+                        <div class="d-flex flex-wrap mb-4 align-items-end">
+                        <form method="GET" action="{{ url_for('admin.tracking_report') }}" class="d-flex align-items-end me-3">
+                            <div style="max-width: 200px;" class="me-2">
+                                <label for="filter-date" class="form-label">Tanggal:</label>
+                                <input type="date" id="filter-date" name="filter_date" class="form-control" value="{{ filter_date if filter_date else '' }}" />
+                            </div>
+                            <div style="max-width: 200px;" class="me-2">
+                                <label for="filter-personnel" class="form-label">Karyawan:</label>
+                                <select id="filter-personnel" name="filter_personnel_id" class="form-select">
+                                    <option value="">Semua Karyawan</option>
+                                    {% for personnel in personnels_list %}
+                                    <option value="{{ personnel.id }}" {% if personnel.id|string == filter_personnel_id|string %}selected{% endif %}>
+                                        {{ personnel.name }}
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <button type="submit" class="btn btn-primary">Filter</button>
+                        </form>
+                        </div>
+                        <div class="d-flex mb-3">
+                            <div class="text-muted">
+                                Show <div class="mx-2 d-inline-block"><input type="text" class="form-control form-control-sm" value="{{ tracking_data|length if tracking_data else 0 }}" size="3" readonly></div> entries
+                            </div>
+                            <div class="ms-auto text-muted">
+                                Search: <div class="ms-2 d-inline-block"><input type="text" id="tableSearchInput" class="form-control form-control-sm" placeholder="Cari di tabel..."></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table card-table table-vcenter text-nowrap datatable" id="workTimeReportTable">
+                            <thead>
+                                <tr>
+                                    <th class="w-1">No.</th>
+                                    <th>Tanggal</th>
+                                    <th>Object Pelanggaran</th>
+                                    <th>Captured Image</th>
+                                    <th>Nama Pegawai</th> <!-- Ganti judul kolom -->
+                                    <th>Area CCTV</th>
+                                    <th>Aksi
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% if tracking_data %}
+                                    {% for row in tracking_data %}
+                                    <tr>
+                                        <td>{{ row.no }}</td>
+                                        <td>{{ row.timestamp }}</td>
+                                        <td>{{ row.detected_class }}</td>
+                                        <td>
+                                            {% if row.image_url %}
+                                                <a href="{{ url_for('static', filename=row.image_url.replace('static/', '')) }}" target="_blank">
+                                                    <img src="{{ url_for('static', filename=row.image_url.replace('static/', '')) }}" width="100" style="cursor:pointer;">
+                                                </a>
+                                            {% else %}
+                                                -
+                                            {% endif %}
+                                        </td>
+                                        <td>{{ row.personnel_name }}</td> <!-- Tampilkan nama personel -->
+                                        <td>{{ row.camera_name }}</td>
+                                        <td>
+                                            <!-- Contoh tombol delete di tabel tracking -->
+                                                <button class="btn btn-danger btn-sm btn-delete-tracking" data-id="{{ row.tracking_id }}">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="16" height="16" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                                                        <path stroke="none" d="M0 0h24v24H0z"/>
+                                                        <line x1="4" y1="7" x2="20" y2="7" />
+                                                        <line x1="10" y1="11" x2="10" y2="17" />
+                                                        <line x1="14" y1="11" x2="14" y2="17" />
+                                                        <path d="M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2 -2l1 -12" />
+                                                        <path d="M9 7v-3a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v3" />
+                                                    </svg>
+                                                    Hapus
+                                                </button>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                {% else %}
+                                    <tr>
+                                        <td colspan="7" class="text-center text-muted">Data tidak ditemukan.</td>
+                                    </tr>
+                                {% endif %}
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="card-footer d-flex align-items-center">
+    <p class="m-0 text-muted">Menampilkan <span>{{ tracking_data|length if tracking_data else 0 }}</span> entri</p>
+    {% if pagination %}
+    <nav class="ms-auto">
+        <ul class="pagination mb-0">
+            {% if pagination.has_prev %}
+                <li class="page-item">
+                    <a class="page-link" href="{{ url_for('admin.tracking_report', page=pagination.prev_num, filter_date=filter_date) }}">&laquo;</a>
+                </li>
+            {% else %}
+                <li class="page-item disabled"><span class="page-link">&laquo;</span></li>
+            {% endif %}
+            {% for p in range(1, pagination.pages + 1) %}
+                <li class="page-item {% if pagination.page == p %}active{% endif %}">
+                    <a class="page-link" href="{{ url_for('admin.tracking_report', page=p, filter_date=filter_date) }}">{{ p }}</a>
+                </li>
+            {% endfor %}
+            {% if pagination.has_next %}
+                <li class="page-item">
+                    <a class="page-link" href="{{ url_for('admin.tracking_report', page=pagination.next_num, filter_date=filter_date) }}">&raquo;</a>
+                </li>
+            {% else %}
+                <li class="page-item disabled"><span class="page-link">&raquo;</span></li>
+            {% endif %}
+        </ul>
+    </nav>
+    {% endif %}
+</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Export -->
+<div class="modal fade" id="modal-export" tabindex="-1" role="dialog" aria-labelledby="exportModalLabel" aria-hidden="true">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="exportModalLabel">Export Laporan</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Pilih format export:</p>
+                <form method="POST">
+                    <input type="hidden" name="export_filter_date" id="export_filter_date_input" value="{{ filter_date if filter_date else '' }}">
+                    <div class="mb-3">
+                        <select name="format" class="form-select">
+                            <option value="csv">CSV</option>
+                            <option value="excel">Excel (XLSX)</option>
+                        </select>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Export Data</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    // --- SKRIP UNTUK EXPORT LANGSUNG (Excel) ---
+    const exportButton = document.getElementById('direct-export-btn');
+    if (exportButton) {
+        exportButton.addEventListener('click', function (event) {
+            event.preventDefault();
+            const filterDate = document.getElementById('filter-date').value;
+            // Ganti dengan endpoint export excel tracking report Anda
+            const exportUrl = new URL("{{ url_for('admin.export_tracking_report_excel', _external=True) }}");
+            if (filterDate) {
+                exportUrl.searchParams.append('filter_date', filterDate);
+            }
+            window.location.href = exportUrl.href;
+        });
+    }
+
+    // --- SKRIP UNTUK PENCARIAN CLIENT-SIDE ---
+    const searchInput = document.getElementById('tableSearchInput');
+    const table = document.getElementById('workTimeReportTable');
+    if (searchInput && table) {
+        searchInput.addEventListener('keyup', function() {
+            const filter = searchInput.value.toLowerCase();
+            const rows = table.getElementsByTagName('tbody')[0].getElementsByTagName('tr');
+            for (let i = 0; i < rows.length; i++) {
+                if (rows[i].getElementsByTagName('td').length > 1) {
+                    rows[i].style.display = rows[i].textContent.toLowerCase().includes(filter) ? '' : 'none';
+                }
+            }
+        });
+    }
+
+    // Update hidden input di modal export saat filter berubah
+    const filterDateInput = document.getElementById('filter-date');
+    const exportFilterDateInput = document.getElementById('export_filter_date_input');
+    function updateExportModalFilters() {
+        if (exportFilterDateInput && filterDateInput) {
+            exportFilterDateInput.value = filterDateInput.value;
+        }
+    }
+    if (filterDateInput) filterDateInput.addEventListener('change', updateExportModalFilters);
+    updateExportModalFilters();
+});
+document.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('.btn-delete-tracking').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            const trackingId = btn.getAttribute('data-id');
+            Swal.fire({
+                title: 'Yakin ingin menghapus data ini?',
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#d33',
+                cancelButtonColor: '#3085d6',
+                confirmButtonText: 'Ya, hapus!'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    fetch(`/admin/delete_tracking/${trackingId}`, {
+                        method: 'POST'
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.status === 'success') {
+                            Swal.fire('Berhasil!', 'Data berhasil dihapus.', 'success').then(() => {
+                                location.reload();
+                            });
+                        } else {
+                            Swal.fire('Gagal!', data.message || 'Gagal menghapus data.', 'error');
+                        }
+                    })
+                    .catch(() => {
+                        Swal.fire('Gagal!', 'Terjadi kesalahan.', 'error');
+                    });
+                }
+            });
+        });
+    });
+});
+</script>
+{% endblock %}

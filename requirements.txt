@@ -8,3 +8,11 @@ pandas
 openpyxl
 opencv-python
 numpy
+joblib
+flask_migrate
+torch
+facenet_pytorch
+scikit-learn
+xlsxwriter
+ultralytics
+uuid

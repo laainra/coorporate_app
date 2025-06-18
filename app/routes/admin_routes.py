@@ -1,11 +1,12 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, current_app, send_file
 from flask_login import login_required, current_user, logout_user
-from app.models import Company, Divisions, Personnels, Personnel_Entries, Camera_Settings, Work_Timer # Import Work_Timer
+from app.models import Company, Divisions, Personnels, Personnel_Entries, Camera_Settings, Work_Timer, Tracking 
 from app import db # Import instance db
 from app.utils.decorators import admin_required # Decorators
 from datetime import datetime, date, timedelta # Import timedelta
 from sqlalchemy import func, cast, Date, and_, text
 import io
+from PIL import Image
 import pandas as pd
 from werkzeug.utils import secure_filename # Untuk upload file
 import os
@@ -437,7 +438,7 @@ def tracking_cam():
 #                            filter_date=filter_date_str, 
 #                            filter_personnel_id=int(filter_personnel_id_str) if filter_personnel_id_str and filter_personnel_id_str.isdigit() else None
 #                            )
-    
+
 @bp.route('/tracking_report')
 @login_required
 @admin_required
@@ -447,51 +448,68 @@ def tracking_report():
         flash("Admin account not linked to a company.", "danger")
         return redirect(url_for('auth.login'))
 
-    personnel_list = Personnels.query.filter_by(company_obj=company).all()
+    # Ambil daftar kamera tracking milik company
+    cameras = Camera_Settings.query.filter_by(company_obj=company, role_camera=Camera_Settings.ROLE_TRACKING).all()
+    camera_ids = [cam.id for cam in cameras]
+    
+    # Ambil daftar personel untuk dropdown
+    personnels_list = Personnels.query.filter_by(company_obj=company).all()
 
+    # Ambil tanggal filter dari request, jika tidak ada tampilkan semua data
     filter_date_str = request.args.get('filter_date')
+    filter_personnel_id = request.args.get('filter_personnel_id')
+    page = request.args.get('page', 1, type=int)
+    per_page = 10  # Jumlah data per halaman
+    tracking_query = Tracking.query.join(Camera_Settings).filter(
+        Tracking.camera_id.in_(camera_ids)
+    )
     if filter_date_str:
         try:
             filter_date = datetime.strptime(filter_date_str, "%Y-%m-%d").date()
+            tracking_query = tracking_query.filter(db.func.date(Tracking.timestamp) == filter_date)
         except ValueError:
-            flash("Invalid date format. Showing report for today.", "warning")
-            filter_date = date.today()
+            flash("Invalid date format. Showing all data.", "warning")
+            filter_date = None
     else:
-        filter_date = date.today()
+        filter_date = None  # Tidak ada filter, tampilkan semua data
+        
+    # Filter by personnel jika ada
+    if filter_personnel_id and filter_personnel_id.isdigit():
+        tracking_query = tracking_query.filter(Tracking.personnel_id == int(filter_personnel_id))
 
+    tracking_query = tracking_query.order_by(Tracking.timestamp.desc())
+    pagination = tracking_query.paginate(page=page, per_page=per_page, error_out=False)
+    tracking_entries = pagination.items
 
-    tracking_data_query = db.session.query(
-        Work_Timer.datetime,
-        Work_Timer.type,
-        Work_Timer.timer, # Durasi timer (misal, detik)
-        Personnels.name.label('employee_name'),
-        Camera_Settings.cam_name.label('camera_name')
-    ).join(Personnels, Work_Timer.personnel_id == Personnels.id)\
-     .join(Camera_Settings, Work_Timer.camera_id == Camera_Settings.id)\
-     .filter(
-        cast(Work_Timer.datetime, Date) == filter_date,
-        Personnels.company_id == company.id,
-        Work_Timer.type.in_([Work_Timer.TYPE_SIT, Work_Timer.TYPE_FACE_DETECTED]) # Contoh filter type
-    ).order_by(Work_Timer.datetime.asc()).all()
-
- 
-    report_data = []
-    # Contoh sederhana: hanya menampilkan log individu
-    for entry in tracking_data_query:
-        report_data.append({
-            'datetime': entry.datetime.strftime('%Y-%m-%d %H:%M:%S'),
-            'employee_name': entry.employee_name,
-            'event_type': entry.type,
-            'duration_seconds': entry.timer,
-            'camera_name': entry.camera_name
+    tracking_data = []
+    for idx, entry in enumerate(tracking_entries, start=1 + (page-1)*per_page):
+        image_url = None
+        if entry.image_path:
+            if entry.image_path.startswith('static/'):
+                image_url = url_for('static', filename=entry.image_path[7:])
+            else:
+                image_url = url_for('static', filename=entry.image_path)
+        personnel_name = entry.personnel.name if entry.personnel else '-'
+        tracking_data.append({
+            'no': idx,
+            'tracking_id': entry.id,  # <-- Tambahkan ini
+            'timestamp': entry.timestamp.strftime('%Y-%m-%d %H:%M:%S'),
+            'detected_class': entry.detected_class,
+            'confidence': entry.confidence,
+            'image_url': image_url,
+            'personnel_name': personnel_name,  # <-- Tambahkan ini
+            'camera_name': entry.camera.cam_name if entry.camera else '-',
         })
 
-
-    return render_template('admin_panel/tracking_report.html', {
-        'personnel_list': personnel_list, # Untuk filter dropdown
-        'tracking_report_data': report_data, # Data yang akan ditampilkan
-        'filter_date': filter_date.isoformat(), # Tanggal filter
-    })
+    return render_template(
+        'admin_panel/tracking_report.html',
+        tracking_data=tracking_data,
+        filter_date=filter_date_str if filter_date_str else '',
+        filter_personnel_id=filter_personnel_id,
+        personnels_list=personnels_list,
+        cameras=cameras,
+        pagination=pagination
+    )
 
 @bp.route('/presence-stream') # URL lebih baik menggunakan tanda hubung
 @login_required
@@ -1137,3 +1155,145 @@ def export_work_time_report_excel():
                      as_attachment=True,
                      download_name=filename,
                      mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    
+
+@bp.route('/export_tracking_report_excel')
+@login_required
+def export_tracking_report_excel():
+    company = Company.query.filter_by(user_id=current_user.id).first()
+    if not company:
+        flash("User tidak terasosiasi dengan perusahaan.", "danger")
+        return redirect(url_for('auth.login'))
+
+    filter_date_str = request.args.get('filter_date')
+    cameras = Camera_Settings.query.filter_by(company_obj=company, role_camera=Camera_Settings.ROLE_TRACKING).all()
+    camera_ids = [cam.id for cam in cameras]
+
+    tracking_query = Tracking.query.join(Camera_Settings).filter(
+        Tracking.camera_id.in_(camera_ids)
+    )
+    if filter_date_str:
+        try:
+            filter_date = datetime.strptime(filter_date_str, "%Y-%m-%d").date()
+            tracking_query = tracking_query.filter(db.func.date(Tracking.timestamp) == filter_date)
+        except ValueError:
+            filter_date = None
+
+    tracking_query = tracking_query.order_by(Tracking.timestamp.desc())
+
+    report_data = []
+    for idx, entry in enumerate(tracking_query, start=1):
+        if entry.detected_class == 'person_no_tie':
+            pelanggaran = 'Tidak memakai dasi'
+        else:
+            pelanggaran = entry.detected_class
+
+        image_display = entry.image_path if entry.image_path else '-'
+        personnel_name = entry.personnel.name if entry.personnel else '-'
+        report_data.append({
+            'No.': idx,
+            'Tanggal': entry.timestamp.strftime('%Y-%m-%d %H:%M:%S'),
+            'Object Pelanggaran': pelanggaran,
+            'Confidence': "%.2f" % entry.confidence,
+            'Captured Image': image_display,
+            'Nama Pegawai': personnel_name,  # <-- Tambahkan ini
+            'Area CCTV': entry.camera.cam_name if entry.camera else '-',
+        })
+
+    df = pd.DataFrame(report_data)
+    if df.empty:
+        df = pd.DataFrame(columns=[
+            'No.', 'Tanggal', 'Object Pelanggaran', 'Confidence',
+            'Captured Image', 'Nama Pegawai', 'Area CCTV'
+        ])
+
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        # Hapus 'Captured Image' sebelum menulis ke Excel, kita akan menanganinya secara manual
+        df_for_excel = df.drop(columns=['Captured Image'])
+        df_for_excel.insert(4, 'Captured Image', None) # Sisipkan kolom kosong untuk gambar
+        
+        df_for_excel.to_excel(writer, index=False, sheet_name='Tracking Report', startrow=1, header=False)
+
+        workbook  = writer.book
+        worksheet = writer.sheets['Tracking Report']
+
+        header_format = workbook.add_format({
+            'bold': True,
+            'text_wrap': True,
+            'valign': 'vcenter',
+            'align': 'center',
+            'fg_color': '#D7E4BC',
+            'border': 1
+        })
+        center_format = workbook.add_format({'align': 'center', 'valign': 'vcenter'})
+
+        # Tulis header secara manual
+        headers = list(df.columns)
+        for col_num, value in enumerate(headers):
+            worksheet.write(0, col_num, value, header_format)
+
+        # Atur lebar kolom
+        for i, col in enumerate(headers):
+            if col == 'Captured Image':
+                worksheet.set_column(i, i, 30)
+            else:
+                column_len = max(df[col].astype(str).map(len).max(), len(col))
+                worksheet.set_column(i, i, column_len + 2)
+
+        img_col_idx = headers.index('Captured Image')
+
+        # Set isi cell data ke tengah
+        n_rows, n_cols = df_for_excel.shape
+        for row in range(1, n_rows + 1):  # Mulai dari 1 karena header di 0
+            for col in range(n_cols):
+                worksheet.write(row, col, df_for_excel.iloc[row-1, col], center_format)
+
+        # Sisipkan gambar (seperti sebelumnya)
+        image_row_height = 95
+        for row_num, img_path in enumerate(df['Captured Image'], start=2):
+            worksheet.set_row(row_num - 1, image_row_height)
+            if img_path and img_path != '-':
+                img_path_abs = os.path.join(current_app.root_path, img_path)
+                if os.path.exists(img_path_abs):
+                    try:
+                        with Image.open(img_path_abs) as img:
+                            img_width, img_height = img.size
+                        scale = image_row_height / img_height
+                        worksheet.insert_image(
+                            row_num - 1, img_col_idx, img_path_abs,
+                            {
+                                'x_scale': scale,
+                                'y_scale': scale,
+                                'object_position': 1,
+                                'x_offset': 5,
+                                'y_offset': 5
+                            }
+                        )
+                    except Exception as e:
+                        worksheet.write(row_num - 1, img_col_idx, f"Error: {e}", center_format)
+                else:
+                    worksheet.write(row_num - 1, img_col_idx, 'File not found', center_format)
+    
+    output.seek(0)
+    filename = f"Tracking_Report_{filter_date_str if filter_date_str else 'all'}.xlsx"
+    return send_file(
+        output,
+        as_attachment=True,
+        download_name=filename,
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+
+@bp.route('/delete_tracking/<int:tracking_id>', methods=['POST'])
+@login_required
+@admin_required
+def delete_tracking(tracking_id):
+    tracking_entry = Tracking.query.get_or_404(tracking_id)
+    try:
+        db.session.delete(tracking_entry)
+        db.session.commit()
+        flash('Data tracking berhasil dihapus.', 'success')
+        return jsonify({'status': 'success'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'status': 'error', 'message': f'Gagal menghapus data: {e}'}), 500

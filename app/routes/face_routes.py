@@ -804,6 +804,13 @@ def generate_presence_stream_frames(app_for_context, cam_id_db): # cam_id_db is 
 
     logger = app_for_context.logger
     logger.info(f"[PresenceStream DB_ID:{cam_id_db}] Starting stream.")
+    
+    # Tambahkan inisialisasi variabel interval di sini
+    current_interval_total_frames = 0
+    current_interval_frames_with_faces = 0
+    current_interval_total_faces_detected = 0
+    current_interval_total_faces_recognized = 0
+    current_interval_total_faces_unknown = 0
 
     camera_setting = None
     personnel_map = {}

@@ -7,12 +7,17 @@ import numpy as np
 from datetime import datetime, timedelta, date, time
 from flask import Blueprint, Response, request, jsonify, render_template, current_app, flash, redirect, url_for
 from flask_login import login_required, current_user
-from app.models import Personnels, Personnel_Images, Camera_Settings, Work_Timer, Personnel_Entries, Company, Divisions # Import semua model
+from app.models import Personnels, Personnel_Images, Camera_Settings, Work_Timer, Personnel_Entries, Company, Divisions, Tracking # Import semua model
 from app import db # Import instance db
 from app.utils.decorators import admin_required, employee_required # Decorators
 from sqlalchemy.sql import text 
 import re
 import time
+from ultralytics import YOLO
+import uuid
+import threading
+from flask import Response
+from flask import current_app
 from threading import Thread, Lock
 # ====================================================================
 # Global AI/CV Settings & Initialization
@@ -99,10 +104,12 @@ def get_camera_instance(camera_source):
 
     if isinstance(processed_source, int):
         # 👇 Prioritaskan backend tercepat
-         for backend in [cv2.CAP_MSMF,cv2.CAP_DSHOW, cv2.CAP_V4L2, cv2.CAP_ANY]:   # Hindari CAP_MSMF jika tidak perlu
+         for backend in [cv2.CAP_DSHOW, cv2.CAP_MSMF, cv2.CAP_V4L2, cv2.CAP_ANY]:
             tried_backends.append(backend)
             cap = cv2.VideoCapture(processed_source, backend)
             if cap.isOpened():
+                cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+                cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
                 print(f"[get_camera_instance] Camera opened with backend {backend}.")
                 break
     else:
@@ -1530,3 +1537,344 @@ def process_frame():
 def ping_server():
     """Endpoint sederhana untuk memeriksa apakah server aktif."""
     return jsonify(status="ok", message="Server is alive."), 200
+
+MODEL_YOLO_FILENAME = 'person_tie_no_tie_merokok_v11.pt'
+yolo_class_names = ["memakai_sandal", "merokok", "no-tie", "person", "tie"]
+
+def get_yolo_model_path(yolo_models_path):
+    return os.path.join(yolo_models_path, MODEL_YOLO_FILENAME)
+
+yolo_model = None
+def get_yolo_model(yolo_models_path):
+    global yolo_model
+    if yolo_model is None:
+        model_path = get_yolo_model_path(yolo_models_path)
+        yolo_model = YOLO(model_path)
+    return yolo_model
+
+class ThreadedYOLOCamera:
+    def __init__(self, src):
+        self.capture = cv2.VideoCapture(src)
+        self.frame = None
+        self.stopped = False
+        self.lock = threading.Lock()
+        threading.Thread(target=self.update, daemon=True).start()
+
+    def update(self):
+        while not self.stopped:
+            ret, frame = self.capture.read()
+            if not ret:
+                time.sleep(0.1)
+                continue
+            with self.lock:
+                self.frame = frame
+
+    def get_frame(self):
+        with self.lock:
+            return self.frame.copy() if self.frame is not None else None
+
+    def release(self):
+        self.stopped = True
+        self.capture.release()
+
+def save_object_detection(camera, detected_class, confidence, image_path=None, app_obj=None, personnel_id=None):
+    try:
+        # Mapping class ke label laporan
+        class_report_map = {
+            "no-tie": "Tidak memakai dasi",
+            "merokok": "Merokok Di dalam ruangan",
+            "memakai_sandal": "Memakai sandal saat jam kerja"
+        }
+        with app_obj.app_context():
+            db_detected_class = class_report_map.get(detected_class, detected_class)
+            tracking = Tracking(
+                camera_id=camera.id if camera else None,
+                detected_class=db_detected_class,
+                confidence=confidence,
+                timestamp=datetime.now(),
+                image_path=image_path,
+                personnel_id=personnel_id  # <-- simpan personnel_id jika ada
+            )
+            db.session.add(tracking)
+            db.session.commit()
+            print(f"✅ Data deteksi {db_detected_class} berhasil disimpan.")
+    except Exception as e:
+        if app_obj:
+            with app_obj.app_context():
+                db.session.rollback()
+        print(f"❌ Gagal menyimpan data deteksi: {e}")
+        
+# ...existing code...
+
+def detect_yolo_and_face(cam=None, static_folder=None, yolo_models_path=None, app_obj=None):
+    """
+    Streaming video dengan deteksi pelanggaran (YOLO) dan pengenalan wajah.
+    Menggunakan cache di memori untuk mencegah duplikasi data akibat delay database
+    dan membatasi maksimal 3 jenis pelanggaran berbeda per personel per hari.
+    """
+    camera_url = cam.feed_src if cam else 0
+    cap = get_camera_instance(camera_url)
+    detection_tracking_dir = os.path.join(static_folder, 'detection_tracking')
+    os.makedirs(detection_tracking_dir, exist_ok=True)
+
+    yolo_model = get_yolo_model(yolo_models_path)
+    from app.routes.face_routes import (
+        face_detector, resnet_embedder, known_embeddings_db,
+        preprocess_face_for_resnet_pytorch, get_face_roi_mtcnn, get_embedding_resnet_pytorch
+    )
+    from sklearn.metrics.pairwise import cosine_similarity
+    from app.models import Personnels
+
+    pelanggaran_classes = ['memakai_sandal', 'merokok','no-tie']
+    class_report_map = {
+        "memakai_sandal": "Memakai sandal saat jam kerja",
+        "merokok": "Merokok Di dalam ruangan",
+        "no-tie": "Tidak memakai dasi",
+    }
+
+    # <<< MODIFIKASI: Tambahkan cache di memori >>>
+    # Cache ini akan menyimpan pelanggaran yang sudah terdeteksi per personel selama sesi stream berjalan
+    # Format: { personnel_id: {'jenis_pelanggaran_1', 'jenis_pelanggaran_2'} }
+    personnel_violation_cache = {}
+
+    try:
+        with app_obj.app_context():
+            while True:
+                ret, frame = cap.read()
+                if not ret or frame is None:
+                    time.sleep(0.05)
+                    continue
+
+                # 1. Deteksi Pelanggaran (YOLO)
+                yolo_results = yolo_model.predict(frame, conf=0.6, stream=False, device='cpu')
+                pelanggaran_boxes = []
+                # (Sisa kode deteksi YOLO sama seperti sebelumnya)
+                for r in yolo_results:
+                    for box in r.boxes:
+                        cls = int(box.cls[0])
+                        conf = float(box.conf[0])
+                        class_name = yolo_class_names[cls]
+                        if class_name in pelanggaran_classes:
+                            x1, y1, x2, y2 = map(int, box.xyxy[0])
+                            pelanggaran_boxes.append({
+                                'class': class_name,
+                                'box': (x1, y1, x2, y2),
+                                'confidence': conf
+                            })
+                
+                    # 2. Deteksi Wajah (MTCNN)
+                    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                    from PIL import Image
+                    frame_pil = Image.fromarray(frame_rgb)
+                    face_boxes, face_probs = face_detector.detect(frame_pil)
+
+                    # 3. Proses jika ada wajah DAN pelanggaran
+                    if face_boxes is not None and len(pelanggaran_boxes) > 0:
+                        for i, face_box in enumerate(face_boxes):
+                            # (Proses pengenalan wajah sama seperti sebelumnya sampai mendapatkan recognized_id)
+                            # ... (kode face recognition) ...
+                            recognized_id = None # Placeholder, ini akan diisi oleh logika face rec Anda
+                            recognized_name = "Unknown"
+                            # --- Simulasi logika face recognition Anda ---
+                            face_roi = get_face_roi_mtcnn(frame, face_box)
+                            if face_roi is None or face_roi.size == 0: continue
+                            face_tensor = preprocess_face_for_resnet_pytorch(face_roi)
+                            if face_tensor is None: continue
+                            embedding = get_embedding_resnet_pytorch(face_tensor)
+                            if embedding is None: continue
+                            if known_embeddings_db["embeddings"].size > 0:
+                                similarities = cosine_similarity(embedding.reshape(1, -1), known_embeddings_db["embeddings"])
+                                best_idx = int(np.argmax(similarities[0]))
+                                max_similarity = similarities[0][best_idx]
+                                if max_similarity >= 0.30:
+                                    recognized_id = known_embeddings_db["ids"][best_idx]
+                                    personnel = Personnels.query.filter_by(id=recognized_id).first()
+                                    if personnel:
+                                        recognized_name = personnel.name
+                            # --- Akhir dari simulasi logika face rec ---
+
+                            # 4. Logika Pengecekan dan Penyimpanan Pelanggaran dengan Cache
+                            if recognized_id:
+                                today = datetime.now().date()
+                                
+                                # Cek apakah personel sudah ada di cache. Jika tidak, query DB sekali saja.
+                                if recognized_id not in personnel_violation_cache:
+                                    print(f"INFO: Deteksi pertama untuk {recognized_name} (ID: {recognized_id}) di sesi ini. Inisialisasi cache dari DB.")
+                                    existing_violations_today = db.session.query(Tracking.detected_class).filter(
+                                        Tracking.personnel_id == recognized_id,
+                                        db.func.date(Tracking.timestamp) == today
+                                    ).distinct().all()
+                                    # Simpan hasil query ke cache
+                                    personnel_violation_cache[recognized_id] = {row[0] for row in existing_violations_today}
+
+                                # Sekarang, gunakan data dari cache yang cepat
+                                violations_set_from_cache = personnel_violation_cache[recognized_id]
+                                
+                                if len(violations_set_from_cache) >= 3:
+                                    continue # Batas harian sudah tercapai, lanjut ke wajah berikutnya
+
+                                for pel in pelanggaran_boxes:
+                                    detected_class_in_db_format = class_report_map.get(pel['class'], pel['class'])
+
+                                    if detected_class_in_db_format in violations_set_from_cache:
+                                        continue # Pelanggaran jenis ini sudah dicatat (berdasarkan cache), lewati
+
+                                    print(f"SAVING: Pelanggaran baru '{pel['class']}' oleh {recognized_name} (ID: {recognized_id})")
+                                    
+                                    image_filename = f"{uuid.uuid4().hex}.jpg"
+                                    image_path = os.path.join(detection_tracking_dir, image_filename)
+                                    cv2.imwrite(image_path, frame)
+                                    rel_image_path = f'static/detection_tracking/{image_filename}'
+                                    
+                                    save_object_detection(
+                                        camera=cam,
+                                        detected_class=pel['class'],
+                                        confidence=pel['confidence'],
+                                        image_path=rel_image_path,
+                                        app_obj=app_obj,
+                                        personnel_id=recognized_id
+                                    )
+                                    
+                                    # UPDATE CACHE di memori secara instan!
+                                    personnel_violation_cache[recognized_id].add(detected_class_in_db_format)
+
+                                    if len(personnel_violation_cache[recognized_id]) >= 3:
+                                        print(f"INFO: {recognized_name} sekarang sudah mencapai batas 3 pelanggaran hari ini.")
+                                        break # Keluar dari loop pelanggaran
+                                    
+                                    # Gambar kotak dan nama pada frame untuk visualisasi
+                                    x1p, y1p, x2p, y2p = pel['box']
+                                    cv2.rectangle(frame, (x1p, y1p), (x2p, y2p), (0, 0, 255), 2)
+                                    cv2.putText(frame, f"{pel['class']} - {recognized_name}", (x1p, y1p - 10),
+                                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+
+                # Tampilkan semua box pelanggaran (meski tidak overlap dengan wajah)
+                for pel in pelanggaran_boxes:
+                    x1p, y1p, x2p, y2p = pel['box']
+                    cv2.rectangle(frame, (x1p, y1p), (x2p, y2p), (255, 0, 0), 2)
+                    cv2.putText(frame, pel['class'], (x1p, y1p - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 0), 2)
+
+                # Tampilkan semua box wajah
+                if face_boxes is not None:
+                    for i, face_box in enumerate(face_boxes):
+                        x1f, y1f, x2f, y2f = [int(c) for c in face_box]
+                        cv2.rectangle(frame, (x1f, y1f), (x2f, y2f), (0, 255, 0), 2)
+
+                ret, jpeg = cv2.imencode('.jpg', frame)
+                if not ret:
+                    continue
+                yield (b'--frame\r\n'
+                       b'Content-Type: image/jpeg\r\n\r\n' + jpeg.tobytes() + b'\r\n')
+    finally:
+        if cap:
+            cap.release()
+
+def detect_realtime_yolo(cam=None, static_folder=None, yolo_models_path=None, app_obj=None):
+    # Gunakan get_camera_instance untuk membuka kamera/stream
+    camera_url = cam.feed_src if cam else 0
+    cap = get_camera_instance(camera_url)
+    detection_tracking_dir = os.path.join(static_folder, 'detection_tracking')
+    os.makedirs(detection_tracking_dir, exist_ok=True)
+
+    model = get_yolo_model(yolo_models_path)
+
+    try:
+        while True:
+            ret, frame = cap.read() if cap else (False, None)
+            if not ret or frame is None:
+                time.sleep(0.05)
+                continue
+
+            results = model.predict(frame, conf=0.6, stream=False, device='cpu')
+            detected_classes = set()
+            confidences = {name: 0.0 for name in yolo_class_names}
+
+            for r in results:
+                for box in r.boxes:
+                    cls = int(box.cls[0])
+                    conf = float(box.conf[0])
+                    class_name = yolo_class_names[cls]
+                    detected_classes.add(class_name)
+                    if conf > confidences.get(class_name, 0.0):
+                        confidences[class_name] = conf
+
+                    x1, y1, x2, y2 = map(int, box.xyxy[0])
+                    # Color coding untuk class baru
+                    if class_name == 'person':
+                        color = (0, 255, 0)  # Green
+                    elif class_name == 'tie':
+                        color = (0, 0, 255)  # Red
+                    elif class_name == 'no-tie':
+                        color = (255, 0, 0)  # Blue
+                    elif class_name == 'memakai_sandal':
+                        color = (0, 255, 255)  # Yellow
+                    elif class_name == 'merokok':
+                        color = (128, 0, 128)  # Purple
+                    else:
+                        color = (255, 255, 255)  # White for unknown
+
+                    cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
+                    cv2.putText(frame, f"{class_name} {conf:.2f}", (x1, y1 - 10),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+
+            # Deteksi pelanggaran: no-tie, memakai_sandal, merokok
+            pelanggaran_classes = ['no-tie', 'memakai_sandal', 'merokok']
+            for pelanggaran in pelanggaran_classes:
+                if pelanggaran in detected_classes:
+                    # Simpan frame ke database jika pelanggaran terdeteksi
+                    image_filename = f"{uuid.uuid4().hex}.jpg"
+                    image_path = os.path.join(detection_tracking_dir, image_filename)
+                    cv2.imwrite(image_path, frame)
+                    rel_image_path = f'static/detection_tracking/{image_filename}'
+                    save_object_detection(
+                        camera=cam,
+                        detected_class=pelanggaran,
+                        confidence=confidences[pelanggaran],
+                        image_path=rel_image_path,
+                        app_obj=app_obj
+                    )
+                    # Hanya simpan satu kali per frame untuk satu pelanggaran (jika ingin multi, hapus break)
+                    break
+
+            ret, jpeg = cv2.imencode('.jpg', frame)
+            if not ret:
+                continue
+            yield (b'--frame\r\n'
+                   b'Content-Type: image/jpeg\r\n\r\n' + jpeg.tobytes() + b'\r\n')
+    finally:
+        if cap:
+            cap.release()
+            
+
+
+@bp.route('/predict_yolo_video/<int:cam_id>')
+@login_required
+def predict_yolo_video(cam_id):
+    cam_settings = Camera_Settings.query.filter_by(id=cam_id, cam_is_active=True).first()
+    if not cam_settings:
+        return jsonify({'status': 'error', 'message': 'Camera not found'}), 404
+    static_folder = current_app.static_folder
+    yolo_models_path = current_app.config['YOLO_MODELS_PATH']
+    app_obj = current_app._get_current_object()  # <--- ambil objek Flask app
+    return Response(
+        detect_realtime_yolo(cam_settings, static_folder, yolo_models_path, app_obj),
+        mimetype='multipart/x-mixed-replace; boundary=frame'
+    )
+    
+@bp.route('/predict_yolo_and_face_video/<int:cam_id>')
+@login_required
+def predict_yolo_and_face_video(cam_id):
+    """
+    Route untuk streaming video dengan deteksi YOLO (pelanggaran) dan pengenalan wajah.
+    """
+    cam_settings = Camera_Settings.query.filter_by(id=cam_id, cam_is_active=True).first()
+    if not cam_settings:
+        return jsonify({'status': 'error', 'message': 'Camera not found'}), 404
+    static_folder = current_app.static_folder
+    yolo_models_path = current_app.config['YOLO_MODELS_PATH']
+    app_obj = current_app._get_current_object()  # Ambil objek Flask app
+
+    return Response(
+        detect_yolo_and_face(cam_settings, static_folder, yolo_models_path, app_obj),
+        mimetype='multipart/x-mixed-replace; boundary=frame'
+    )
